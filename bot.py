@@ -12,7 +12,7 @@ import random
 import re
 import aiohttp
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -32,6 +32,10 @@ HH_API_URL = "https://api.hh.ru/vacancies"
 ADMIN_ID = 1827360709
 PREMIUM_PRICE = 150
 FREE_LIMIT = 3
+
+# ========== ЛОГГИРОВАНИЕ ==========
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s")
+log = logging.getLogger("job_bot")
 
 # ========== БАЗА ДАННЫХ ==========
 class Database:
@@ -112,12 +116,7 @@ class Database:
         total = len(self.users)
         paid = sum(1 for u in self.users.values() if u.get("paid"))
         return total, paid, len(self.vacancies)
-
 db = Database()
-
-# ========== ЛОГГИРОВАНИЕ ==========
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s")
-log = logging.getLogger("job_bot")
 
 # ========== AI КЛИЕНТ ==========
 async def ai_gen(system: str, user: str, temp: float = 0.8) -> str:
@@ -197,8 +196,8 @@ async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
                                 "contact": f"Ссылка: {link}",
                                 "source": "Avito",
                                 "date_added": datetime.now().isoformat()
-})
-                    except:
+                            })
+except:
                         continue
 
                 await asyncio.sleep(random.uniform(5, 10))
@@ -273,15 +272,21 @@ async def background_parsing():
         log.info("Фоновый парсинг запущен")
 
         for city in cities:
-            avito_jobs = await parse_avito(city, pages=1)
-            for v in avito_jobs:
-                db.add_vacancy(v)
+            try:
+                avito_jobs = await parse_avito(city, pages=1)
+                for v in avito_jobs:
+                    db.add_vacancy(v)
+            except Exception as e:
+                log.error(f"Ошибка парсинга Avito для {city}: {e}")
 
-            city_codes = {"Москва": 1, "Санкт-Петербург": 2, "Казань": 88, "Екатеринбург": 3, "Новосибирск": 4}
-            code = city_codes.get(city, 1)
-            hh_jobs = await parse_hh(city, code)
-            for v in hh_jobs:
-                db.add_vacancy(v)
+            try:
+                city_codes = {"Москва": 1, "Санкт-Петербург": 2, "Казань": 88, "Екатеринбург": 3, "Новосибирск": 4}
+                code = city_codes.get(city, 1)
+                hh_jobs = await parse_hh(city, code)
+                for v in hh_jobs:
+                    db.add_vacancy(v)
+            except Exception as e:
+                log.error(f"Ошибка парсинга hh.ru для {city}: {e}")
 
             await asyncio.sleep(5)
 
@@ -308,9 +313,11 @@ def main_menu(is_paid: bool = False) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📍 Сменить город", callback_data="change_city")],
     ]
     if not is_paid:
-        buttons.append([InlineKeyboardButton(text="💎 Премиум (149₽)", callback_data="premium_info")])
+        buttons.
+append([InlineKeyboardButton(text="💎 Премиум (149₽)", callback_data="premium_info")])
     buttons.append([InlineKeyboardButton(text="📤 Поделиться с другом", switch_inline_query="")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 # ========== ОБРАБОТЧИКИ ==========
 async def cmd_start(message: Message, state: FSMContext):
     user = db.get_user(message.from_user.id)
@@ -409,10 +416,10 @@ async def show_vacancies(call: CallbackQuery):
             f"Ты посмотрел {FREE_LIMIT} вакансии бесплатно.\n"
             f"💎 Премиум — *безлимит* + уведомления + избранное.\n"
             f"Всего 149 руб. навсегда.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💎 Купить Премиум", callback_data="buy_premium")],
                 [InlineKeyboardButton(text="⬅ В меню", callback_data="main")]
-]),
+            ]),
             parse_mode="Markdown"
         )
         return
@@ -422,13 +429,21 @@ async def show_vacancies(call: CallbackQuery):
     if not vacancies:
         await call.message.edit_text("🔍 *Ищу свежие вакансии...* Подожди.", parse_mode="Markdown")
 
-        avito_jobs = await parse_avito(user.get("city", "Москва"), pages=1)
-        for v in avito_jobs:
-            db.add_vacancy(v)
+        try:
+            avito_jobs = await parse_avito(user.get("city", "Москва"), pages=1)
+            for v in avito_jobs:
+                db.add_vacancy(v)
+        except:
+            pass
 
-        hh_jobs = await parse_hh(user.get("city", "Москва"), 1)
-        for v in hh_jobs:
-            db.add_vacancy(v)
+        try:
+            city_codes = {"Москва": 1, "Санкт-Петербург": 2, "Казань": 88, "Екатеринбург": 3, "Новосибирск": 4}
+            code = city_codes.get(user.get("city", "Москва"), 1)
+            hh_jobs = await parse_hh(user.get("city", "Москва"), code)
+            for v in hh_jobs:
+                db.add_vacancy(v)
+        except:
+            pass
 
         vacancies = db.get_vacancies(user.get("city", "Москва"), user.get("age_group", "16-17"))
 
@@ -505,30 +520,39 @@ async def buy_premium(call: CallbackQuery):
 
 async def pre_checkout(pq: PreCheckoutQuery):
     await pq.answer(ok=True)
-
 async def payment_success(message: Message):
     db.set_paid(message.from_user.id)
-
     await message.answer("💎 *Оплата прошла! Готовлю твои материалы...*", parse_mode="Markdown")
 
-    scam_guide = await ai_gen(
-        "Ты эксперт по безопасности для подростков. Напиши гайд: как отличить мошенников при поиске работы. 5 признаков, конкретные примеры.",
-        "Гайд по безопасности."
-    )
+    try:
+        scam_guide = await ai_gen(
+            "Ты эксперт по безопасности для подростков. Напиши гайд: как отличить мошенников при поиске работы. 5 признаков, конкретные примеры.",
+            "Гайд по безопасности."
+        )
+        await message.answer(f"🛡 *Гайд: Как не попасть на мошенников*\n\n{scam_guide}", parse_mode="Markdown")
+    except:
+        await message.answer("🛡 Гайд по безопасности временно недоступен.")
 
-    samozanyatost_guide = await ai_gen(
-        "Ты эксперт по самозанятости. Напиши гайд для подростка 14-17 лет: как оформить самозанятость, нужно ли согласие родителей, как платить налог. Простыми словами.",
-        "Гайд по самозанятости."
-    )
+    try:
+        samozanyatost_guide = await ai_gen(
+            "Ты эксперт по самозанятости. Напиши гайд для подростка 14-17 лет: как оформить самозанятость, "
+            "нужно ли согласие родителей, как платить налог. Простыми словами.",
+            "Гайд по самозанятости."
+        )
+        await message.answer(f"📄 *Гайд: Самозанятость с 14 лет*\n\n{samozanyatost_guide}", parse_mode="Markdown")
+    except:
+        await message.answer("📄 Гайд по самозанятости временно недоступен.")
 
-    templates = await ai_gen(
-        "Ты эксперт по трудоустройству. Напиши 3 шаблона откликов на вакансии для подростка: для Avito, для hh.ru, для личного сообщения.",
-        "Шаблоны откликов."
-    )
+    try:
+        templates = await ai_gen(
+            "Ты эксперт по трудоустройству. Напиши 3 шаблона откликов на вакансии для подростка: "
+            "для Avito, для hh.ru, для личного сообщения.",
+            "Шаблоны откликов."
+        )
+        await message.answer(f"📝 *Шаблоны откликов*\n\n{templates}", parse_mode="Markdown")
+    except:
+        await message.answer("📝 Шаблоны откликов временно недоступны.")
 
-    await message.answer(f"🛡 *Гайд: Как не попасть на мошенников*\n\n{scam_guide}", parse_mode="Markdown")
-    await message.answer(f"📄 *Гайд: Самозанятость с 14 лет*\n\n{samozanyatost_guide}", parse_mode="Markdown")
-    await message.answer(f"📝 *Шаблоны откликов*\n\n{templates}", parse_mode="Markdown")
     await message.answer(
         "✅ *Всё готово!*\n\n"
         "Теперь у тебя безлимитный доступ ко всем вакансиям.\n"
@@ -595,7 +619,8 @@ async def main():
 
     asyncio.create_task(background_parsing())
 
-    await dp.start_polling(bot)
+    await dp.
+start_polling(bot)
 
 if name == "__main__":
     asyncio.run(main())
