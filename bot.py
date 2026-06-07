@@ -142,6 +142,7 @@ async def ai_gen(system: str, user: str, temp: float = 0.8) -> str:
         return "Сервис временно недоступен."
 
 # ========== ПАРСЕР AVITO ==========
+# ========== ПАРСЕР AVITO ==========
 async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
     vacancies = []
     city_domains = {
@@ -193,13 +194,10 @@ async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
                             vacancies.append({
                                 "title": title,
                                 "description": f"Вакансия с Avito: {title}",
-                                "payment": f"{price}₽" if price != "Не указана" else "Договорная",
+                                "payment": f"{price}Р" if price != "Не указана" else "Договорная",
                                 "city": city,
                                 "age_groups": ["14-15", "16-17", "18+"],
-Авито
-Авито: недвижимость, транспорт, работа, услуги, вещи
-На Авито вы можете недорого купить или выгодно продать авто с пробегом или новую машину, квартиру и другую недвижимость, а также новую или б/у одежду, мебель
-"contact": f"Ссылка: {link}",
+                                "contact": f"Ссылка: {link}",
                                 "source": "Avito",
                                 "date_added": datetime.now().isoformat()
                             })
