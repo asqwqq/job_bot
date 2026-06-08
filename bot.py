@@ -4,6 +4,7 @@
 Агрегатор вакансий для подростков 14-17 лет
 Парсинг Avito + hh.ru API
 Монетизация: Telegram Stars
+С выбором категорий работы
 """
 import asyncio
 import json
@@ -63,6 +64,7 @@ class Database:
             self.users[uid] = {
                 "city": None,
                 "age_group": None,
+                "job_type": "any",
                 "paid": False,
                 "daily_views": 0,
                 "last_view_date": None,
@@ -92,14 +94,23 @@ class Database:
         self.get_user(uid)["paid"] = True
         self.save()
 
-    def get_vacancies(self, city: str, age_group: str) -> List[Dict]:
+    def set_job_type(self, uid: int, job_type: str):
+        self.get_user(uid)["job_type"] = job_type
+        self.save()
+
+    def get_vacancies(self, city: str, age_group: str, job_type: str = "any") -> List[Dict]:
         city_lower = city.lower().strip()
         results = []
         for v in self.vacancies:
             v_city = v.get("city", "").lower()
             if city_lower in v_city or v_city in city_lower or city_lower == "вся россия":
                 if age_group in v.get("age_groups", ["14-15", "16-17", "18+"]):
-                    results.append(v)
+                    if job_type == "any":
+                        results.append(v)
+                    elif job_type == "online" and v.get("job_type") == "online":
+                        results.append(v)
+                    elif job_type == "active" and v.get("job_type") == "active":
+                        results.append(v)
         return results
 
     def add_vacancy(self, vacancy: Dict):
@@ -134,6 +145,18 @@ async def ai_gen(system: str, user: str, temp: float = 0.8) -> str:
     except Exception as e:
         log.error(f"AI exception: {e}")
         return "Сервис временно недоступен."
+
+def classify_job_type(title: str) -> str:
+    title_lower = title.lower()
+    online_keywords = ["удалён", "удален", "онлайн", "фриланс", "копирайт", "текст", "отзыв", "написани", "модерат", "smm", "дизайн", "перевод", "набор текст", "телефон", "интернет", "чат", "поддержк", "контент"]
+    active_keywords = ["курьер", "раздач", "расклей", "промоутер", "уборк", "склад", "грузчик", "выгул", "бегун", "кухн", "официант", "бармен", "бариста", "стройк", "монтаж", "фасовк", "сборк", "заказа", "доставк", "такси"]
+    for kw in online_keywords:
+        if kw in title_lower:
+            return "online"
+    for kw in active_keywords:
+        if kw in title_lower:
+            return "active"
+    return "active"
 
 async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
     vacancies = []
@@ -175,12 +198,14 @@ async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
                         price = price_elem.get("content", "Не указана") if price_elem else "Не указана"
                         link = "https://www.avito.ru" + link_elem.get("href", "") if link_elem else url
                         if any(w in title.lower() for w in ["14", "15", "16", "17", "школьник", "студент", "подработк", "промоутер", "курьер", "раздач", "расклейк"]):
+                            job_type = classify_job_type(title)
                             vacancies.append({
                                 "title": title,
                                 "description": f"Вакансия с Avito: {title}",
                                 "payment": f"{price} руб." if price != "Не указана" else "Договорная",
                                 "city": city,
                                 "age_groups": ["14-15", "16-17", "18+"],
+                                "job_type": job_type,
                                 "contact": f"Ссылка: {link}",
                                 "source": "Avito",
                                 "date_added": datetime.now().isoformat()
@@ -225,12 +250,14 @@ async def parse_hh(city_name: str, city_code: int = 1) -> List[Dict]:
                 snippet = item.get("snippet", {})
                 responsibility = snippet.get("responsibility", "") or ""
                 responsibility = re.sub(r'<[^>]+>', '', responsibility)
+                job_type = classify_job_type(title)
                 vacancies.append({
                     "title": title,
                     "description": f"{employer}. {responsibility[:150]}...",
                     "payment": payment,
                     "city": city_name,
                     "age_groups": ["16-17", "18+"],
+                    "job_type": job_type,
                     "contact": f"Откликнуться: {url}",
                     "source": "hh.ru",
                     "date_added": datetime.now().isoformat()
@@ -273,16 +300,26 @@ async def background_parsing():
 class Onboarding(StatesGroup):
     city = State()
     age = State()
+    job_type = State()
 
 def main_menu(is_paid: bool = False) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text="💰 Смотреть вакансии", callback_data="show_vacancies")],
+        [InlineKeyboardButton(text="🔧 Выбрать тип работы", callback_data="change_job_type")],
         [InlineKeyboardButton(text="📍 Сменить город", callback_data="change_city")],
     ]
     if not is_paid:
         buttons.append([InlineKeyboardButton(text="💎 Премиум (149₽)", callback_data="premium_info")])
     buttons.append([InlineKeyboardButton(text="📤 Поделиться с другом", switch_inline_query="")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def job_type_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Любая работа", callback_data="jobtype_any")],
+        [InlineKeyboardButton(text="💻 Удалёнка / Онлайн", callback_data="jobtype_online")],
+        [InlineKeyboardButton(text="🏃 Активная (курьер, промоутер)", callback_data="jobtype_active")],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="main")],
+    ])
 
 async def cmd_start(message: Message, state: FSMContext):
     user = db.get_user(message.from_user.id)
@@ -300,11 +337,14 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         await state.set_state(Onboarding.city)
     else:
+        job_type_names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
+        jt = job_type_names.get(user.get("job_type", "any"), "Любая")
         views_left = max(0, FREE_LIMIT - user["daily_views"]) if not user["paid"] else "∞"
         await message.answer(
             f"👋 *С возвращением!*\n\n"
             f"📍 Город: *{user['city']}*\n"
             f"👤 Возраст: *{user['age_group']}*\n"
+            f"🔧 Тип работы: *{jt}*\n"
             f"💎 Статус: *{'Премиум' if user['paid'] else 'Бесплатно (' + str(views_left) + ' сегодня)'}*\n\n"
             "Жми кнопку 👇",
             reply_markup=main_menu(user["paid"]),
@@ -349,14 +389,36 @@ async def set_age(call: CallbackQuery, state: FSMContext):
     user["age_group"] = age
     db.save()
     await call.message.edit_text(
+        f"✅ *Возраст: {age}*\n\n"
+        "Теперь выбери тип работы:",
+        reply_markup=job_type_keyboard(),
+        parse_mode="Markdown"
+    )
+    await state.set_state(Onboarding.job_type)
+
+async def set_job_type(call: CallbackQuery, state: FSMContext):
+    jt = call.data.replace("jobtype_", "")
+    user = db.get_user(call.from_user.id)
+    user["job_type"] = jt
+    db.save()
+    job_type_names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
+    await call.message.edit_text(
         f"✅ *Готово!*\n\n"
         f"📍 Город: *{user['city']}*\n"
-        f"👤 Возраст: *{age}*\n\n"
+        f"👤 Возраст: *{user['age_group']}*\n"
+        f"🔧 Тип работы: *{job_type_names.get(jt, 'Любая')}*\n\n"
         "Теперь жми «Смотреть вакансии» и получай предложения!",
         reply_markup=main_menu(user["paid"]),
         parse_mode="Markdown"
     )
     await state.clear()
+
+async def change_job_type(call: CallbackQuery):
+    await call.message.edit_text(
+        "🔧 *Выбери тип работы:*",
+        reply_markup=job_type_keyboard(),
+        parse_mode="Markdown"
+    )
 
 async def show_vacancies(call: CallbackQuery):
     user = db.get_user(call.from_user.id)
@@ -381,7 +443,8 @@ async def show_vacancies(call: CallbackQuery):
             parse_mode="Markdown"
         )
         return
-    vacancies = db.get_vacancies(user.get("city", "Москва"), user.get("age_group", "16-17"))
+    job_type = user.get("job_type", "any")
+    vacancies = db.get_vacancies(user.get("city", "Москва"), user.get("age_group", "16-17"), job_type)
     if not vacancies:
         await call.message.edit_text("🔍 *Ищу свежие вакансии...* Подожди.", parse_mode="Markdown")
         try:
@@ -398,11 +461,12 @@ async def show_vacancies(call: CallbackQuery):
                 db.add_vacancy(v)
         except:
             pass
-        vacancies = db.get_vacancies(user.get("city", "Москва"), user.get("age_group", "16-17"))
+        vacancies = db.get_vacancies(user.get("city", "Москва"), user.get("age_group", "16-17"), job_type)
     if not vacancies:
         await call.message.edit_text(
-            "😔 В твоём городе пока нет вакансий.\nПопробуй позже — база обновляется каждые 3 часа.",
+            "😔 По твоему фильтру пока нет вакансий.\nПопробуй выбрать «Любая работа» или подожди обновления.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔧 Сменить тип работы", callback_data="change_job_type")],
                 [InlineKeyboardButton(text="⬅ В меню", callback_data="main")]
             ]),
             parse_mode="Markdown"
@@ -411,9 +475,12 @@ async def show_vacancies(call: CallbackQuery):
     db.increment_views(call.from_user.id)
     random.shuffle(vacancies)
     to_show = vacancies[:3]
-    response = f"💰 *Вакансии в {user.get('city', 'твоём городе')}:*\n\n"
+    job_type_names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
+    jt_name = job_type_names.get(job_type, "Любая")
+    response = f"💰 *Вакансии ({jt_name}) в {user.get('city', 'твоём городе')}:*\n\n"
     for i, v in enumerate(to_show, 1):
-        response += f"*{i}. {v['title']}*\n"
+        type_emoji = "💻" if v.get("job_type") == "online" else "🏃"
+        response += f"*{i}. {type_emoji} {v['title']}*\n"
         response += f"💵 {v['payment']}\n"
         response += f"📝 {v['description'][:120]}...\n"
         response += f"📞 {v['contact']}\n"
@@ -426,6 +493,7 @@ async def show_vacancies(call: CallbackQuery):
         response,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔄 Ещё вакансии", callback_data="show_vacancies")],
+            [InlineKeyboardButton(text="🔧 Сменить тип работы", callback_data="change_job_type")],
             [InlineKeyboardButton(text="💎 Премиум (безлимит)", callback_data="premium_info")],
             [InlineKeyboardButton(text="⬅ В меню", callback_data="main")]
         ]),
@@ -512,10 +580,13 @@ async def change_city(call: CallbackQuery, state: FSMContext):
 
 async def main_handler(call: CallbackQuery):
     user = db.get_user(call.from_user.id)
+    job_type_names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
+    jt = job_type_names.get(user.get("job_type", "any"), "Любая")
     views_left = max(0, FREE_LIMIT - user["daily_views"]) if not user.get("paid") else "∞"
     await call.message.edit_text(
         f"👋 *Главное меню*\n\n"
         f"📍 {user.get('city', 'Не указан')} | 👤 {user.get('age_group', 'Не указан')}\n"
+        f"🔧 Тип работы: *{jt}*\n"
         f"💎 {'Премиум' if user.get('paid') else 'Бесплатно (' + str(views_left) + ' сегодня)'}\n\n"
         "Выбирай:",
         reply_markup=main_menu(user.get("paid", False)),
@@ -538,6 +609,8 @@ async def main():
     dp.callback_query.register(set_city, F.data.startswith("setcity_"))
     dp.message.register(process_city, Onboarding.city)
     dp.callback_query.register(set_age, F.data.startswith("setage_"))
+    dp.callback_query.register(set_job_type, F.data.startswith("jobtype_"))
+    dp.callback_query.register(change_job_type, F.data == "change_job_type")
     dp.callback_query.register(main_handler, F.data == "main")
     dp.callback_query.register(show_vacancies, F.data == "show_vacancies")
     dp.callback_query.register(change_city, F.data == "change_city")
