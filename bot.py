@@ -91,6 +91,12 @@ class Database:
         self.get_user(uid)["job_type"] = job_type
         self.save()
 
+    def reset_user(self, uid: int):
+        user = self.get_user(uid)
+        user["daily_views"] = 0
+        user["paid"] = True
+        self.save()
+
     def get_vacancies(self, city: str, age_group: str, job_type: str = "any") -> List[Dict]:
         city_lower = city.lower().strip()
         results = []
@@ -371,11 +377,17 @@ async def stats_cmd(message: Message):
         t, p, v = db.stats()
         await message.answer(f"👥 {t} | 💎 {p} | 📋 {v} | ⭐ ~{p*PREMIUM_PRICE}")
 
+async def reset_cmd(message: Message):
+    if message.from_user.id == ADMIN_ID:
+        db.reset_user(message.from_user.id)
+        await message.answer("✅ Лимит сброшен + Премиум включён.")
+
 async def main():
     log.info("БОТ ЗАПУСКАЕТСЯ")
     dp = Dispatcher(storage=MemoryStorage())
     dp.message.register(cmd_start, Command("start"))
     dp.message.register(stats_cmd, Command("stats"))
+    dp.message.register(reset_cmd, Command("reset"))
     dp.callback_query.register(set_city, F.data.startswith("setcity_"))
     dp.message.register(process_city, Onboarding.city)
     dp.callback_query.register(set_age, F.data.startswith("setage_"))
