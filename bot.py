@@ -546,9 +546,12 @@ async def main():
     dp.pre_checkout_query.register(pre_checkout)
     dp.message.register(payment_success, F.successful_payment)
     global bot
-    bot = Bot(token=BOT_TOKEN)
-    asyncio.create_task(background_parsing())
-    await dp.start_polling(bot)
+bot = Bot(token=BOT_TOKEN)
+asyncio.create_task(background_parsing())
+# Парсим сразу при запуске
+asyncio.create_task(parse_avito("Москва", 2))
+asyncio.create_task(parse_hh("Москва", 1))
+await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
