@@ -127,6 +127,30 @@ class Database:
 
 db = Database()
 
+# ========== ТЕСТОВЫЕ ВАКАНСИИ ==========
+def seed_vacancies():
+    if len(db.vacancies) > 0:
+        return
+    test_jobs = [
+        {"title": "Раздача листовок у метро", "description": "Раздача листовок у метро Кузнецкий мост. Работа для школьников и студентов.", "payment": "500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "WhatsApp: +79001234567", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ", "description": "Работа промоутером в ТЦ Авиапарк. Дегустации, раздача образцов.", "payment": "1200 руб.", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "Тел: +79007654321", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на велосипеде", "description": "Доставка еды из ресторанов. График свободный.", "payment": "3000 руб./день", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "Анкета: https://clck.ru/example", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов на маркетплейсах", "description": "Удалённая работа. Писать отзывы на Wildberries, Ozon. Обучение есть.", "payment": "50-100 руб./отзыв", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "Бот в ТГ: @reviews_bot", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Модератор чата (удалённо)", "description": "Следить за порядком в чате интернет-магазина. 2-3 часа в день.", "payment": "8000 руб./мес", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "Резюме: job@shop.ru", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Расклейка объявлений", "description": "Расклейка объявлений на досках у подъездов. Район ЦАО.", "payment": "1500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "Telegram: @promo_job", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Выгул собак", "description": "Выгул собак в районе Хамовники. 2 раза в день.", "payment": "500 руб./выгул", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "ТГ: @dogwalker", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Копирайтинг для соцсетей", "description": "Написание постов для Instagram/TG. Темы: мода, игры.", "payment": "300 руб./пост", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "Портфолио: smm@agency.ru", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок у метро", "description": "Раздача у метро Невский проспект.", "payment": "500 руб.", "city": "Санкт-Петербург", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "ТГ: @spb_job", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ Галерея", "description": "Дегустация соков в ТЦ Галерея.", "payment": "1000 руб.", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "+79991112233", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок", "description": "Раздача листовок на Баумана.", "payment": "400 руб.", "city": "Казань", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "ТГ: @kazan_rabota", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на самокате", "description": "Доставка посылок по городу.", "payment": "2000 руб./день", "city": "Екатеринбург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "Анкета: https://ekb.dostavka.ru", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов (удалённо)", "description": "Писать отзывы на маркетплейсы.", "payment": "50-100 руб./отзыв", "city": "Новосибирск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "Бот: @reviews_nsk", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+    ]
+    for job in test_jobs:
+        db.vacancies.append(job)
+    db.save()
+    log.info(f"Добавлено {len(test_jobs)} тестовых вакансий")
+
 async def ai_gen(system: str, user: str, temp: float = 0.8) -> str:
     headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
     payload = {
@@ -535,97 +559,4 @@ async def buy_premium(call: CallbackQuery):
 async def pre_checkout(pq: PreCheckoutQuery):
     await pq.answer(ok=True)
 
-async def payment_success(message: Message):
-    db.set_paid(message.from_user.id)
-    await message.answer("💎 *Оплата прошла! Готовлю твои материалы...*", parse_mode="Markdown")
-    try:
-        scam_guide = await ai_gen(
-            "Ты эксперт по безопасности для подростков. Напиши гайд: как отличить мошенников при поиске работы. 5 признаков, примеры.",
-            "Гайд по безопасности."
-        )
-        await message.answer(f"🛡 *Гайд: Как не попасть на мошенников*\n\n{scam_guide}", parse_mode="Markdown")
-    except:
-        pass
-    try:
-        samozanyatost_guide = await ai_gen(
-            "Ты эксперт по самозанятости. Напиши гайд для подростка 14-17 лет: как оформить, согласие родителей, налог.",
-            "Гайд по самозанятости."
-        )
-        await message.answer(f"📄 *Гайд: Самозанятость с 14 лет*\n\n{samozanyatost_guide}", parse_mode="Markdown")
-    except:
-        pass
-    try:
-        templates = await ai_gen(
-            "Ты эксперт по трудоустройству. Напиши 3 шаблона откликов для подростка: Avito, hh.ru, личное сообщение.",
-            "Шаблоны откликов."
-        )
-        await message.answer(f"📝 *Шаблоны откликов*\n\n{templates}", parse_mode="Markdown")
-    except:
-        pass
-    await message.answer(
-        "✅ *Всё готово!*\n\nТеперь у тебя безлимитный доступ ко всем вакансиям.\nУдачи в поисках! 💰",
-        reply_markup=main_menu(True),
-        parse_mode="Markdown"
-    )
-
-async def change_city(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text(
-        "📍 Введи новый город:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅ Отмена", callback_data="main")]
-        ]),
-        parse_mode="Markdown"
-    )
-    await state.set_state(Onboarding.city)
-
-async def main_handler(call: CallbackQuery):
-    user = db.get_user(call.from_user.id)
-    job_type_names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
-    jt = job_type_names.get(user.get("job_type", "any"), "Любая")
-    views_left = max(0, FREE_LIMIT - user["daily_views"]) if not user.get("paid") else "∞"
-    await call.message.edit_text(
-        f"👋 *Главное меню*\n\n"
-        f"📍 {user.get('city', 'Не указан')} | 👤 {user.get('age_group', 'Не указан')}\n"
-        f"🔧 Тип работы: *{jt}*\n"
-        f"💎 {'Премиум' if user.get('paid') else 'Бесплатно (' + str(views_left) + ' сегодня)'}\n\n"
-        "Выбирай:",
-        reply_markup=main_menu(user.get("paid", False)),
-        parse_mode="Markdown"
-    )
-
-async def stats_cmd(message: Message):
-    if message.from_user.id == ADMIN_ID:
-        t, p, v = db.stats()
-        await message.answer(f"👥 Пользователей: {t}\n💎 Платных: {p}\n📋 Вакансий: {v}\n⭐ Звёзд: ~{p * PREMIUM_PRICE}")
-
-async def main():
-    log.info("=" * 60)
-    log.info("БОТ «ГДЕ ПОДРАБОТКА?» запускается")
-    log.info(f"Пользователей: {len(db.users)} | Вакансий: {len(db.vacancies)}")
-    log.info("=" * 60)
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.message.register(cmd_start, Command("start"))
-    dp.message.register(stats_cmd, Command("stats"))
-    dp.callback_query.register(set_city, F.data.startswith("setcity_"))
-    dp.message.register(process_city, Onboarding.city)
-    dp.callback_query.register(set_age, F.data.startswith("setage_"))
-    dp.callback_query.register(set_job_type, F.data.startswith("jobtype_"))
-    dp.callback_query.register(change_job_type, F.data == "change_job_type")
-    dp.callback_query.register(main_handler, F.data == "main")
-    dp.callback_query.register(show_vacancies, F.data == "show_vacancies")
-    dp.callback_query.register(change_city, F.data == "change_city")
-    dp.callback_query.register(premium_info, F.data == "premium_info")
-    dp.callback_query.register(buy_premium, F.data == "buy_premium")
-    dp.pre_checkout_query.register(pre_checkout)
-    dp.message.register(payment_success, F.successful_payment)
-    global bot
-    bot = Bot(token=BOT_TOKEN)
-    asyncio.create_task(background_parsing())
-    async def initial_parse():
-        await parse_avito("Москва", 2)
-        await parse_hh("Москва", 1)
-    asyncio.create_task(initial_parse())
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async def payment
