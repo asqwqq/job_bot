@@ -91,10 +91,21 @@ class Database:
         self.get_user(uid)["job_type"] = job_type
         self.save()
 
+    def set_city(self, uid: int, city: str):
+        self.get_user(uid)["city"] = city
+        self.save()
+
+    def set_age(self, uid: int, age: str):
+        self.get_user(uid)["age_group"] = age
+        self.save()
+
     def reset_user(self, uid: int):
         user = self.get_user(uid)
         user["daily_views"] = 0
         user["paid"] = True
+        user["city"] = "Москва"
+        user["age_group"] = "16-17"
+        user["job_type"] = "any"
         self.save()
 
     def get_vacancies(self, city: str, age_group: str, job_type: str = "any") -> List[Dict]:
@@ -102,13 +113,11 @@ class Database:
         results = []
         for v in self.vacancies:
             v_city = v.get("city", "").lower()
+            v_age_groups = v.get("age_groups", ["14-15", "16-17", "18+"])
+            v_job_type = v.get("job_type", "active")
             if city_lower in v_city or v_city in city_lower or city_lower == "вся россия":
-                if age_group in v.get("age_groups", ["14-15", "16-17", "18+"]):
-                    if job_type == "any":
-                        results.append(v)
-                    elif job_type == "online" and v.get("job_type") == "online":
-                        results.append(v)
-                    elif job_type == "active" and v.get("job_type") == "active":
+                if age_group in v_age_groups:
+                    if job_type == "any" or job_type == v_job_type:
                         results.append(v)
         return results
 
@@ -128,7 +137,7 @@ db = Database()
 
 def seed_vacancies():
     if len(db.vacancies) > 0:
-        return
+        db.vacancies = []
     jobs = [
         {"title": "Раздача листовок", "description": "Москва, ул. Тверская", "payment": "500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@job_msk_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Курьер на велосипеде", "description": "Доставка еды, свободный график", "payment": "3000 руб./день", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@courier_msk", "source": "Прямое", "date_added": datetime.now().isoformat()},
@@ -136,6 +145,8 @@ def seed_vacancies():
         {"title": "Модератор чата", "description": "Удалённо, 2-3 часа в день", "payment": "8000 руб./мес", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "hr@shop.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Промоутер в ТЦ", "description": "Раздача образцов в ТЦ", "payment": "1200 руб.", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@spb_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Выгул собак", "description": "2 раза в день, центр", "payment": "500 руб./выгул", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@dogwalker", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Расклейка объявлений", "description": "Расклейка на досках, центр", "payment": "1500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@promo_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Копирайтинг", "description": "Написание постов для соцсетей", "payment": "300 руб./пост", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "smm@agency.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
     ]
     for j in jobs:
         db.vacancies.append(j)
@@ -179,8 +190,9 @@ class Onboarding(StatesGroup):
 def main_menu(is_paid: bool = False) -> InlineKeyboardMarkup:
     btns = [
         [InlineKeyboardButton(text="💰 Смотреть вакансии", callback_data="show_vacancies")],
-        [InlineKeyboardButton(text="🔧 Выбрать тип работы", callback_data="change_job_type")],
-        [InlineKeyboardButton(text="📍 Сменить город", callback_data="change_city")],
+        [InlineKeyboardButton(text="🔧 Тип работы", callback_data="change_job_type")],
+        [InlineKeyboardButton(text="👤 Возраст", callback_data="change_age")],
+        [InlineKeyboardButton(text="📍 Город", callback_data="change_city")],
     ]
     if not is_paid:
         btns.append([InlineKeyboardButton(text="💎 Премиум (149₽)", callback_data="premium_info")])
@@ -192,6 +204,14 @@ def job_type_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="💰 Любая", callback_data="jobtype_any")],
         [InlineKeyboardButton(text="💻 Удалёнка", callback_data="jobtype_online")],
         [InlineKeyboardButton(text="🏃 Активная", callback_data="jobtype_active")],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="main")],
+    ])
+
+def age_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="14-15", callback_data="setage_14-15")],
+        [InlineKeyboardButton(text="16-17", callback_data="setage_16-17")],
+        [InlineKeyboardButton(text="18+", callback_data="setage_18+")],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="main")],
     ])
 
@@ -217,37 +237,27 @@ async def cmd_start(message: Message, state: FSMContext):
 
 async def set_city(call: CallbackQuery, state: FSMContext):
     city = call.data.replace("setcity_", "")
-    db.get_user(call.from_user.id)["city"] = city
-    db.save()
+    db.set_city(call.from_user.id, city)
     await call.message.edit_text(
         f"📍 *{city}*\nУкажи возраст:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="14-15", callback_data="setage_14-15")],
-            [InlineKeyboardButton(text="16-17", callback_data="setage_16-17")],
-            [InlineKeyboardButton(text="18+", callback_data="setage_18+")],
-        ]),
+        reply_markup=age_keyboard(),
         parse_mode="Markdown"
     )
     await state.set_state(Onboarding.age)
 
 async def process_city(message: Message, state: FSMContext):
-    db.get_user(message.from_user.id)["city"] = message.text.strip()
-    db.save()
+    city = message.text.strip()
+    db.set_city(message.from_user.id, city)
     await message.answer(
-        f"📍 *{message.text}*\nУкажи возраст:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="14-15", callback_data="setage_14-15")],
-            [InlineKeyboardButton(text="16-17", callback_data="setage_16-17")],
-            [InlineKeyboardButton(text="18+", callback_data="setage_18+")],
-        ]),
+        f"📍 *{city}*\nУкажи возраст:",
+        reply_markup=age_keyboard(),
         parse_mode="Markdown"
     )
     await state.set_state(Onboarding.age)
 
 async def set_age(call: CallbackQuery, state: FSMContext):
     age = call.data.replace("setage_", "")
-    db.get_user(call.from_user.id)["age_group"] = age
-    db.save()
+    db.set_age(call.from_user.id, age)
     await call.message.edit_text(
         f"✅ *Возраст: {age}*\nВыбери тип работы:",
         reply_markup=job_type_keyboard(),
@@ -257,8 +267,7 @@ async def set_age(call: CallbackQuery, state: FSMContext):
 
 async def set_job_type(call: CallbackQuery, state: FSMContext):
     jt = call.data.replace("jobtype_", "")
-    db.get_user(call.from_user.id)["job_type"] = jt
-    db.save()
+    db.set_job_type(call.from_user.id, jt)
     names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
     await call.message.edit_text(
         f"✅ *Готово!*\nТип: *{names.get(jt)}*\nЖми «Смотреть вакансии»",
@@ -268,19 +277,16 @@ async def set_job_type(call: CallbackQuery, state: FSMContext):
     await state.clear()
 
 async def change_job_type(call: CallbackQuery):
-    await call.message.edit_text(
-        "🔧 *Тип работы:*",
-        reply_markup=job_type_keyboard(),
-        parse_mode="Markdown"
-    )
+    await call.message.edit_text("🔧 *Тип работы:*", reply_markup=job_type_keyboard(), parse_mode="Markdown")
+
+async def change_age(call: CallbackQuery, state: FSMContext):
+    await call.message.edit_text("👤 *Возраст:*", reply_markup=age_keyboard(), parse_mode="Markdown")
+    await state.set_state(Onboarding.age)
 
 async def show_vacancies(call: CallbackQuery):
     u = db.get_user(call.from_user.id)
     if not u["city"]:
-        await call.message.edit_text(
-            "Сначала /start",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]])
-        )
+        await call.message.edit_text("Сначала /start", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]))
         return
     if not db.can_view(call.from_user.id):
         await call.message.edit_text(
@@ -295,8 +301,10 @@ async def show_vacancies(call: CallbackQuery):
     vacs = db.get_vacancies(u.get("city", "Москва"), u.get("age_group", "16-17"), u.get("job_type", "any"))
     if not vacs:
         await call.message.edit_text(
-            "😔 Нет вакансий. Попробуй позже.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]),
+            "😔 Нет вакансий под твой фильтр. Смени город, возраст или тип работы.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔧 Сменить фильтры", callback_data="main")]
+            ]),
             parse_mode="Markdown"
         )
         return
@@ -349,18 +357,10 @@ async def pre_checkout(pq: PreCheckoutQuery):
 
 async def payment_success(message: Message):
     db.set_paid(message.from_user.id)
-    await message.answer(
-        "💎 *Готово!* Безлимит активен.",
-        reply_markup=main_menu(True),
-        parse_mode="Markdown"
-    )
+    await message.answer("💎 *Готово!* Безлимит активен.", reply_markup=main_menu(True), parse_mode="Markdown")
 
 async def change_city(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text(
-        "📍 Новый город:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Отмена", callback_data="main")]]),
-        parse_mode="Markdown"
-    )
+    await call.message.edit_text("📍 Новый город:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Отмена", callback_data="main")]]), parse_mode="Markdown")
     await state.set_state(Onboarding.city)
 
 async def main_handler(call: CallbackQuery):
@@ -380,7 +380,7 @@ async def stats_cmd(message: Message):
 async def reset_cmd(message: Message):
     if message.from_user.id == ADMIN_ID:
         db.reset_user(message.from_user.id)
-        await message.answer("✅ Лимит сброшен + Премиум включён.")
+        await message.answer("✅ Сброшено: Москва, 16-17, Любая, Премиум.")
 
 async def main():
     log.info("БОТ ЗАПУСКАЕТСЯ")
@@ -393,6 +393,7 @@ async def main():
     dp.callback_query.register(set_age, F.data.startswith("setage_"))
     dp.callback_query.register(set_job_type, F.data.startswith("jobtype_"))
     dp.callback_query.register(change_job_type, F.data == "change_job_type")
+    dp.callback_query.register(change_age, F.data == "change_age")
     dp.callback_query.register(main_handler, F.data == "main")
     dp.callback_query.register(show_vacancies, F.data == "show_vacancies")
     dp.callback_query.register(change_city, F.data == "change_city")
