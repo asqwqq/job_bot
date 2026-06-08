@@ -548,9 +548,12 @@ async def main():
     global bot
 bot = Bot(token=BOT_TOKEN)
 asyncio.create_task(background_parsing())
-# Парсим сразу при запуске
-asyncio.create_task(parse_avito("Москва", 2))
-asyncio.create_task(parse_hh("Москва", 1))
+
+async def initial_parse():
+    await parse_avito("Москва", 2)
+    await parse_hh("Москва", 1)
+
+asyncio.create_task(initial_parse())
 await dp.start_polling(bot)
 
 if __name__ == "__main__":
