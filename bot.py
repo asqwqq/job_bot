@@ -26,6 +26,15 @@ ADMIN_ID = 1827360709
 PREMIUM_PRICE = 150
 FREE_LIMIT = 3
 
+# Российские прокси (бесплатные, могут меняться)
+PROXY_LIST = [
+    "http://194.67.200.10:8080",
+    "http://185.221.153.131:8080",
+    "http://95.182.108.149:8080",
+    "http://178.208.83.34:8080",
+    "http://109.248.14.19:8080",
+]
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s")
 log = logging.getLogger("job_bot")
 
@@ -139,19 +148,66 @@ def seed_vacancies():
     if len(db.vacancies) > 0:
         db.vacancies = []
     jobs = [
+        # Москва
         {"title": "Раздача листовок", "description": "Москва, ул. Тверская", "payment": "500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@job_msk_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Курьер на велосипеде", "description": "Доставка еды, свободный график", "payment": "3000 руб./день", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@courier_msk", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Написание отзывов", "description": "Удалённо, WB/Ozon", "payment": "100 руб./отзыв", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@reviews_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Модератор чата", "description": "Удалённо, 2-3 часа в день", "payment": "8000 руб./мес", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "hr@shop.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Промоутер в ТЦ", "description": "Раздача образцов в ТЦ", "payment": "1200 руб.", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@spb_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Выгул собак", "description": "2 раза в день, центр", "payment": "500 руб./выгул", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@dogwalker", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Расклейка объявлений", "description": "Расклейка на досках, центр", "payment": "1500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@promo_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
         {"title": "Копирайтинг", "description": "Написание постов для соцсетей", "payment": "300 руб./пост", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "smm@agency.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Санкт-Петербург
+        {"title": "Промоутер в ТЦ", "description": "Раздача образцов в ТЦ Галерея", "payment": "1200 руб.", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@spb_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на самокате", "description": "Доставка посылок, центр", "payment": "2000 руб./день", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@spb_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Онлайн-консультант", "description": "Чат поддержки, удалённо", "payment": "15000 руб./мес", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "hr@spb.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Казань
+        {"title": "Раздача листовок", "description": "Ул. Баумана, пешеходная зона", "payment": "400 руб.", "city": "Казань", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@kazan_rabota", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ Кольцо", "description": "Дегустация напитков", "payment": "1000 руб.", "city": "Казань", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@kazan_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Екатеринбург
+        {"title": "Курьер на самокате", "description": "Доставка посылок по городу", "payment": "2000 руб./день", "city": "Екатеринбург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "ekb.dostavka.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов", "description": "Удалённо, маркетплейсы", "payment": "50-100 руб./отзыв", "city": "Екатеринбург", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@reviews_ekb", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Новосибирск
+        {"title": "Расклейка объявлений", "description": "Расклейка на подъездах", "payment": "1000 руб.", "city": "Новосибирск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@nsk_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Модератор чата", "description": "Удалённо, 3 часа в день", "payment": "7000 руб./мес", "city": "Новосибирск", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "@moder_nsk", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Краснодар
+        {"title": "Раздача листовок", "description": "Ул. Красная", "payment": "500 руб.", "city": "Краснодар", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@krd_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ", "description": "Раздача образцов кофе", "payment": "1100 руб.", "city": "Краснодар", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@krd_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Ростов-на-Дону
+        {"title": "Курьер на велосипеде", "description": "Доставка еды", "payment": "2500 руб./день", "city": "Ростов-на-Дону", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@rostov_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Нижний Новгород
+        {"title": "Выгул собак", "description": "Верхневолжская набережная", "payment": "400 руб./выгул", "city": "Нижний Новгород", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@nn_dog", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Челябинск
+        {"title": "Расклейка объявлений", "description": "Район ЧТЗ", "payment": "1200 руб.", "city": "Челябинск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@chel_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Самара
+        {"title": "Раздача листовок", "description": "Набережная", "payment": "450 руб.", "city": "Самара", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@samara_rabota", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Уфа
+        {"title": "Промоутер в ТЦ", "description": "Дегустация соков", "payment": "900 руб.", "city": "Уфа", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@ufa_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Омск
+        {"title": "Курьер на автобусе", "description": "Доставка документов", "payment": "1500 руб./день", "city": "Омск", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@omsk_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Волгоград
+        {"title": "Раздача листовок", "description": "Центральная набережная", "payment": "400 руб.", "city": "Волгоград", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@vlg_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Воронеж
+        {"title": "Расклейка объявлений", "description": "Центральный район", "payment": "1000 руб.", "city": "Воронеж", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@vrn_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Красноярск
+        {"title": "Промоутер в ТЦ", "description": "Раздача листовок в ТЦ Планета", "payment": "1000 руб.", "city": "Красноярск", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@krs_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Пермь
+        {"title": "Курьер пеший", "description": "Доставка по центру", "payment": "1800 руб./день", "city": "Пермь", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@perm_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Павловск (Воронежская область) - для твоей девушки
+        {"title": "Помощь по хозяйству", "description": "Уборка территории, помощь на участке", "payment": "800 руб.", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "+7952XXXXXXX", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Выгул собак", "description": "Выгул собак в центре Павловска", "payment": "300 руб./выгул", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@pavlovsk_dog", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов (удалённо)", "description": "Писать отзывы на WB/Ozon, удалённо", "payment": "50-100 руб./отзыв", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@reviews_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        # Удалёнка для всех городов
+        {"title": "Транскрибация аудио", "description": "Расшифровка аудио в текст, удалённо", "payment": "200 руб./час", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@transcribe_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Дизайн аватарок", "description": "Создание аватарок для соцсетей, удалённо", "payment": "200 руб./шт", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@design_avatars", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Набор текста", "description": "Набор текста со сканов, удалённо", "payment": "150 руб./1000 знаков", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@text_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
     ]
     for j in jobs:
         db.vacancies.append(j)
     db.save()
     log.info(f"Добавлено {len(jobs)} тестовых вакансий")
+
+def get_proxy():
+    return random.choice(PROXY_LIST) if PROXY_LIST else None
 
 async def ai_gen(system: str, user: str, temp: float = 0.8) -> str:
     headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
@@ -167,20 +223,153 @@ async def ai_gen(system: str, user: str, temp: float = 0.8) -> str:
 
 def classify(title: str) -> str:
     t = title.lower()
-    for w in ["удалён", "онлайн", "отзыв", "модерат", "копирайт", "текст"]:
+    for w in ["удалён", "онлайн", "отзыв", "модерат", "копирайт", "текст", "транскриб", "дизайн", "набор текст"]:
         if w in t:
             return "online"
     return "active"
 
 async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
-    return []
+    vacancies = []
+    city_domains = {
+        "москва": "moskva", "санкт-петербург": "sankt-peterburg", "спб": "sankt-peterburg",
+        "казань": "kazan", "екатеринбург": "ekaterinburg", "новосибирск": "novosibirsk",
+        "краснодар": "krasnodar", "ростов-на-дону": "rostov-na-donu", "ростов": "rostov-na-donu",
+        "нижний новгород": "nizhniy_novgorod", "челябинск": "chelyabinsk",
+        "самара": "samara", "уфа": "ufa", "омск": "omsk", "пермь": "perm",
+        "воронеж": "voronezh", "волгоград": "volgograd", "красноярск": "krasnoyarsk",
+    }
+    domain = city_domains.get(city.lower().strip(), city.lower().strip().replace(" ", "_"))
+    keywords = ["подработка+с+14+лет", "работа+для+школьников", "раздача+листовок", "промоутер", "курьер+с+16"]
+    headers_list = [
+        {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"},
+        {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36"},
+    ]
+    for keyword in keywords[:2]:
+        for page in range(1, pages + 1):
+            url = f"https://www.avito.ru/{domain}?q={keyword}&p={page}"
+            headers = random.choice(headers_list)
+            proxy = get_proxy()
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, proxy=proxy, timeout=25) as resp:
+                        if resp.status != 200:
+                            continue
+                        html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                items = soup.find_all("div", {"data-marker": "item"})
+                for item in items[:3]:
+                    try:
+                        title_elem = item.find("h3", {"itemprop": "name"})
+                        price_elem = item.find("meta", {"itemprop": "price"})
+                        link_elem = item.find("a", {"data-marker": "item-title"})
+                        title = title_elem.text.strip() if title_elem else "Без названия"
+                        price = price_elem.get("content", "Не указана") if price_elem else "Не указана"
+                        link = "https://www.avito.ru" + link_elem.get("href", "") if link_elem else url
+                        if any(w in title.lower() for w in ["14", "15", "16", "17", "школьник", "студент", "подработк", "промоутер", "курьер", "раздач", "расклейк"]):
+                            job_type = classify(title)
+                            vacancies.append({
+                                "title": title,
+                                "description": f"Вакансия с Avito: {title}",
+                                "payment": f"{price} руб." if price != "Не указана" else "Договорная",
+                                "city": city,
+                                "age_groups": ["14-15", "16-17", "18+"],
+                                "job_type": job_type,
+                                "contact": f"Ссылка: {link}",
+                                "source": "Avito",
+                                "date_added": datetime.now().isoformat()
+                            })
+                    except:
+                        continue
+                await asyncio.sleep(random.uniform(3, 8))
+            except:
+                continue
+    log.info(f"Avito: найдено {len(vacancies)} вакансий для {city}")
+    return vacancies
 
 async def parse_hh(city_name: str, city_code: int = 1) -> List[Dict]:
-    return []
+    vacancies = []
+    params = {
+        "text": "подработка OR школьник OR студент OR без опыта OR промоутер OR курьер",
+        "area": city_code,
+        "experience": "noExperience",
+        "employment": "part",
+        "per_page": 10,
+        "page": 0,
+        "period": 7
+    }
+    proxy = get_proxy()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(HH_API_URL, params=params, proxy=proxy, timeout=20) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        for item in data.get("items", []):
+            try:
+                title = item.get("name", "Без названия")
+                employer = item.get("employer", {}).get("name", "Не указан")
+                salary = item.get("salary")
+                if salary:
+                    payment = f"{salary.get('from','?')} - {salary.get('to','?')} {salary.get('currency','руб.')}"
+                else:
+                    payment = "Не указана"
+                url = item.get("alternate_url", "")
+                snippet = item.get("snippet", {})
+                responsibility = snippet.get("responsibility", "") or ""
+                responsibility = re.sub(r'<[^>]+>', '', responsibility)
+                job_type = classify(title)
+                vacancies.append({
+                    "title": title,
+                    "description": f"{employer}. {responsibility[:150]}...",
+                    "payment": payment,
+                    "city": city_name,
+                    "age_groups": ["16-17", "18+"],
+                    "job_type": job_type,
+                    "contact": f"Откликнуться: {url}",
+                    "source": "hh.ru",
+                    "date_added": datetime.now().isoformat()
+                })
+            except:
+                continue
+    except:
+        pass
+    log.info(f"hh.ru: найдено {len(vacancies)} вакансий для {city_name}")
+    return vacancies
 
 async def background_parsing():
+    cities = ["Москва", "Санкт-Петербург", "Казань", "Екатеринбург", "Новосибирск",
+              "Краснодар", "Нижний Новгород", "Челябинск", "Самара", "Уфа",
+              "Омск", "Волгоград", "Воронеж", "Красноярск", "Пермь", "Ростов-на-Дону"]
+    city_codes = {"Москва": 1, "Санкт-Петербург": 2, "Казань": 88, "Екатеринбург": 3,
+                  "Новосибирск": 4, "Краснодар": 53, "Нижний Новгород": 66, "Челябинск": 104,
+                  "Самара": 78, "Уфа": 99, "Омск": 68, "Волгоград": 40, "Воронеж": 26,
+                  "Красноярск": 54, "Пермь": 72, "Ростов-на-Дону": 76}
     while True:
-        await asyncio.sleep(3 * 60 * 60)
+        log.info("Фоновый парсинг запущен")
+        for city in cities:
+            try:
+                avito_jobs = await parse_avito(city, pages=1)
+                for v in avito_jobs:
+                    db.add_vacancy(v)
+                log.info(f"Avito {city}: +{len(avito_jobs)}")
+            except Exception as e:
+                log.error(f"Ошибка Avito {city}: {e}")
+            try:
+                code = city_codes.get(city, 1)
+                hh_jobs = await parse_hh(city, code)
+                for v in hh_jobs:
+                    db.add_vacancy(v)
+                log.info(f"hh.ru {city}: +{len(hh_jobs)}")
+            except Exception as e:
+                log.error(f"Ошибка hh {city}: {e}")
+            await asyncio.sleep(3)
+        cutoff = datetime.now() - timedelta(days=14)
+        db.vacancies = [v for v in db.vacancies if datetime.fromisoformat(v["date_added"]) > cutoff]
+        if len(db.vacancies) > 500:
+            db.vacancies = db.vacancies[-500:]
+        db.save()
+        log.info(f"Парсинг завершён. Всего вакансий: {len(db.vacancies)}")
+        await asyncio.sleep(2 * 60 * 60)
 
 class Onboarding(StatesGroup):
     city = State()
@@ -223,6 +412,7 @@ async def cmd_start(message: Message, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Москва", callback_data="setcity_Москва")],
                 [InlineKeyboardButton(text="СПб", callback_data="setcity_Санкт-Петербург")],
+                [InlineKeyboardButton(text="Другой город", callback_data="setcity_other")],
             ]),
             parse_mode="Markdown"
         )
@@ -237,6 +427,10 @@ async def cmd_start(message: Message, state: FSMContext):
 
 async def set_city(call: CallbackQuery, state: FSMContext):
     city = call.data.replace("setcity_", "")
+    if city == "other":
+        await call.message.edit_text("📍 Напиши название города:", parse_mode="Markdown")
+        await state.set_state(Onboarding.city)
+        return
     db.set_city(call.from_user.id, city)
     await call.message.edit_text(
         f"📍 *{city}*\nУкажи возраст:",
