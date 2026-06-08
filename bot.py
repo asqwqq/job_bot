@@ -127,7 +127,6 @@ class Database:
 
 db = Database()
 
-# ========== ТЕСТОВЫЕ ВАКАНСИИ ==========
 def seed_vacancies():
     if len(db.vacancies) > 0:
         return
@@ -135,7 +134,7 @@ def seed_vacancies():
         {"title": "Раздача листовок у метро", "description": "Раздача листовок у метро Кузнецкий мост. Работа для школьников и студентов.", "payment": "500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "WhatsApp: +79001234567", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
         {"title": "Промоутер в ТЦ", "description": "Работа промоутером в ТЦ Авиапарк. Дегустации, раздача образцов.", "payment": "1200 руб.", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "Тел: +79007654321", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
         {"title": "Курьер на велосипеде", "description": "Доставка еды из ресторанов. График свободный.", "payment": "3000 руб./день", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "Анкета: https://clck.ru/example", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
-        {"title": "Написание отзывов на маркетплейсах", "description": "Удалённая работа. Писать отзывы на Wildberries, Ozon. Обучение есть.", "payment": "50-100 руб./отзыв", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "Бот в ТГ: @reviews_bot", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов на маркетплейсах", "description": "Удалённая работа. Писать отзывы на Wildberries, Ozon.", "payment": "50-100 руб./отзыв", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "Бот в ТГ: @reviews_bot", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
         {"title": "Модератор чата (удалённо)", "description": "Следить за порядком в чате интернет-магазина. 2-3 часа в день.", "payment": "8000 руб./мес", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "Резюме: job@shop.ru", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
         {"title": "Расклейка объявлений", "description": "Расклейка объявлений на досках у подъездов. Район ЦАО.", "payment": "1500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "Telegram: @promo_job", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
         {"title": "Выгул собак", "description": "Выгул собак в районе Хамовники. 2 раза в день.", "payment": "500 руб./выгул", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "ТГ: @dogwalker", "source": "Прямое размещение", "date_added": datetime.now().isoformat()},
@@ -559,4 +558,6 @@ async def buy_premium(call: CallbackQuery):
 async def pre_checkout(pq: PreCheckoutQuery):
     await pq.answer(ok=True)
 
-async def payment
+async def payment_success(message: Message):
+    db.set_paid(message.from_user.id)
+    await message.answer("💎 *
