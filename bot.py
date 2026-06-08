@@ -547,6 +547,8 @@ async def main():
     dp.message.register(payment_success, F.successful_payment)
     global bot
 bot = Bot(token=BOT_TOKEN)
+global bot
+bot = Bot(token=BOT_TOKEN)
 asyncio.create_task(background_parsing())
 
 async def initial_parse():
@@ -555,6 +557,9 @@ async def initial_parse():
 
 asyncio.create_task(initial_parse())
 await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 if __name__ == "__main__":
     asyncio.run(main())
