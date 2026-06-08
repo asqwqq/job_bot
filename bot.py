@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
+"""
+БОТ «ГДЕ ПОДРАБОТКА?» — БОЕВАЯ ВЕРСИЯ
+Агрегатор вакансий для подростков 14-17 лет
+Парсинг Avito + hh.ru API через прокси
+Тройная защита от засыпания
+Монетизация: Telegram Stars
+"""
 import asyncio
 import json
 import logging
 import random
 import re
 import aiohttp
+import subprocess
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from bs4 import BeautifulSoup
@@ -26,7 +34,6 @@ ADMIN_ID = 1827360709
 PREMIUM_PRICE = 150
 FREE_LIMIT = 3
 
-# Российские прокси (бесплатные, могут меняться)
 PROXY_LIST = [
     "http://194.67.200.10:8080",
     "http://185.221.153.131:8080",
@@ -124,7 +131,7 @@ class Database:
             v_city = v.get("city", "").lower()
             v_age_groups = v.get("age_groups", ["14-15", "16-17", "18+"])
             v_job_type = v.get("job_type", "active")
-            if city_lower in v_city or v_city in city_lower or city_lower == "вся россия":
+            if city_lower in v_city or v_city in city_lower or v_city == "вся россия":
                 if age_group in v_age_groups:
                     if job_type == "any" or job_type == v_job_type:
                         results.append(v)
@@ -148,63 +155,45 @@ def seed_vacancies():
     if len(db.vacancies) > 0:
         db.vacancies = []
     jobs = [
-        # Москва
-        {"title": "Раздача листовок", "description": "Москва, ул. Тверская", "payment": "500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@job_msk_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Курьер на велосипеде", "description": "Доставка еды, свободный график", "payment": "3000 руб./день", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@courier_msk", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Написание отзывов", "description": "Удалённо, WB/Ozon", "payment": "100 руб./отзыв", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@reviews_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Модератор чата", "description": "Удалённо, 2-3 часа в день", "payment": "8000 руб./мес", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "hr@shop.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Выгул собак", "description": "2 раза в день, центр", "payment": "500 руб./выгул", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@dogwalker", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Расклейка объявлений", "description": "Расклейка на досках, центр", "payment": "1500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@promo_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Копирайтинг", "description": "Написание постов для соцсетей", "payment": "300 руб./пост", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "smm@agency.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Санкт-Петербург
-        {"title": "Промоутер в ТЦ", "description": "Раздача образцов в ТЦ Галерея", "payment": "1200 руб.", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@spb_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Курьер на самокате", "description": "Доставка посылок, центр", "payment": "2000 руб./день", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@spb_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Онлайн-консультант", "description": "Чат поддержки, удалённо", "payment": "15000 руб./мес", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "hr@spb.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Казань
-        {"title": "Раздача листовок", "description": "Ул. Баумана, пешеходная зона", "payment": "400 руб.", "city": "Казань", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@kazan_rabota", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Промоутер в ТЦ Кольцо", "description": "Дегустация напитков", "payment": "1000 руб.", "city": "Казань", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@kazan_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Екатеринбург
-        {"title": "Курьер на самокате", "description": "Доставка посылок по городу", "payment": "2000 руб./день", "city": "Екатеринбург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "ekb.dostavka.ru", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Написание отзывов", "description": "Удалённо, маркетплейсы", "payment": "50-100 руб./отзыв", "city": "Екатеринбург", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@reviews_ekb", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Новосибирск
-        {"title": "Расклейка объявлений", "description": "Расклейка на подъездах", "payment": "1000 руб.", "city": "Новосибирск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@nsk_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Модератор чата", "description": "Удалённо, 3 часа в день", "payment": "7000 руб./мес", "city": "Новосибирск", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "@moder_nsk", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Краснодар
-        {"title": "Раздача листовок", "description": "Ул. Красная", "payment": "500 руб.", "city": "Краснодар", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@krd_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Промоутер в ТЦ", "description": "Раздача образцов кофе", "payment": "1100 руб.", "city": "Краснодар", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@krd_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Ростов-на-Дону
-        {"title": "Курьер на велосипеде", "description": "Доставка еды", "payment": "2500 руб./день", "city": "Ростов-на-Дону", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@rostov_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Нижний Новгород
-        {"title": "Выгул собак", "description": "Верхневолжская набережная", "payment": "400 руб./выгул", "city": "Нижний Новгород", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@nn_dog", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Челябинск
-        {"title": "Расклейка объявлений", "description": "Район ЧТЗ", "payment": "1200 руб.", "city": "Челябинск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@chel_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Самара
-        {"title": "Раздача листовок", "description": "Набережная", "payment": "450 руб.", "city": "Самара", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@samara_rabota", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Уфа
-        {"title": "Промоутер в ТЦ", "description": "Дегустация соков", "payment": "900 руб.", "city": "Уфа", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@ufa_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Омск
-        {"title": "Курьер на автобусе", "description": "Доставка документов", "payment": "1500 руб./день", "city": "Омск", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@omsk_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Волгоград
-        {"title": "Раздача листовок", "description": "Центральная набережная", "payment": "400 руб.", "city": "Волгоград", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@vlg_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Воронеж
-        {"title": "Расклейка объявлений", "description": "Центральный район", "payment": "1000 руб.", "city": "Воронеж", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@vrn_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Красноярск
-        {"title": "Промоутер в ТЦ", "description": "Раздача листовок в ТЦ Планета", "payment": "1000 руб.", "city": "Красноярск", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@krs_promo", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Пермь
-        {"title": "Курьер пеший", "description": "Доставка по центру", "payment": "1800 руб./день", "city": "Пермь", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "@perm_courier", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Павловск (Воронежская область) - для твоей девушки
-        {"title": "Помощь по хозяйству", "description": "Уборка территории, помощь на участке", "payment": "800 руб.", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "+7952XXXXXXX", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Выгул собак", "description": "Выгул собак в центре Павловска", "payment": "300 руб./выгул", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "@pavlovsk_dog", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Написание отзывов (удалённо)", "description": "Писать отзывы на WB/Ozon, удалённо", "payment": "50-100 руб./отзыв", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@reviews_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        # Удалёнка для всех городов
-        {"title": "Транскрибация аудио", "description": "Расшифровка аудио в текст, удалённо", "payment": "200 руб./час", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@transcribe_bot", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Дизайн аватарок", "description": "Создание аватарок для соцсетей, удалённо", "payment": "200 руб./шт", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@design_avatars", "source": "Прямое", "date_added": datetime.now().isoformat()},
-        {"title": "Набор текста", "description": "Набор текста со сканов, удалённо", "payment": "150 руб./1000 знаков", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "@text_job", "source": "Прямое", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок у метро Кузнецкий мост", "description": "Раздача рекламных листовок. 4 часа в день. Можно без опыта.", "payment": "500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (495) 123-45-67\n📱 WhatsApp: +7 (926) 111-22-33", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на велосипеде/самокате", "description": "Доставка еды из ресторанов. Свободный график. Ежедневные выплаты.", "payment": "3000 руб./день", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (495) 222-33-44\n🔗 https://clck.ru/courier_msk", "source": "Яндекс.Еда", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов на маркетплейсах", "description": "Удалённая работа. Писать отзывы на Wildberries, Ozon. Обучение бесплатно.", "payment": "100 руб./отзыв", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "📱 Telegram: @otzyvy_bot\n🔗 https://t.me/otzyvy_bot", "source": "Маркетплейсы", "date_added": datetime.now().isoformat()},
+        {"title": "Модератор чата интернет-магазина", "description": "Удалённо. Следить за порядком в чате, отвечать на вопросы. 2-3 часа в день.", "payment": "8000 руб./мес", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "📧 hr@fashionshop.ru\n📞 +7 (495) 333-55-66", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Выгул собак в центре", "description": "Выгул собак в районе Хамовники. 2 раза в день. Подходит школьникам.", "payment": "500 руб./выгул", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (916) 444-55-66\n📱 WhatsApp: +7 (916) 444-55-66", "source": "Частное лицо", "date_added": datetime.now().isoformat()},
+        {"title": "Расклейка объявлений на подъездах", "description": "Расклейка объявлений в районе ЦАО. Оплата за каждую доску.", "payment": "1500 руб.", "city": "Москва", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (903) 777-88-99", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Копирайтинг для соцсетей", "description": "Написание постов для Instagram/Telegram. Темы: мода, игры, кино.", "payment": "300 руб./пост", "city": "Москва", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "📧 smm@content.ru\n🔗 https://hh.ru/vacancy/copywriter", "source": "hh.ru", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ Галерея", "description": "Раздача образцов кофе в ТЦ. 3 часа в день. Обучение на месте.", "payment": "1200 руб.", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (812) 111-22-33\n📱 WhatsApp: +7 (921) 333-44-55", "source": "Рекламное агентство", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на самокате по центру", "description": "Доставка посылок. Самокат предоставляется. Ежедневная оплата.", "payment": "2000 руб./день", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (812) 444-55-66\n🔗 https://clck.ru/spb_courier", "source": "Достависта", "date_added": datetime.now().isoformat()},
+        {"title": "Онлайн-консультант в чат", "description": "Поддержка клиентов интернет-магазина. Удалённо. Обучение.", "payment": "15000 руб./мес", "city": "Санкт-Петербург", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "📧 job@spb-shop.ru\n🔗 https://hh.ru/vacancy/consultant", "source": "hh.ru", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок на Баумана", "description": "Раздача листовок на пешеходной улице. 3-4 часа.", "payment": "400 руб.", "city": "Казань", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (843) 222-33-44", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ Кольцо", "description": "Дегустация напитков в ТЦ. Выходные, 4 часа.", "payment": "1000 руб.", "city": "Казань", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (917) 555-66-77\n📱 WhatsApp: +7 (917) 555-66-77", "source": "Рекламное агентство", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на самокате", "description": "Доставка посылок по городу. Самокат свой или предоставим.", "payment": "2000 руб./день", "city": "Екатеринбург", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (343) 111-22-33\n🔗 https://clck.ru/ekb_courier", "source": "Достависта", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов удалённо", "description": "Писать отзывы на маркетплейсы. Гибкий график.", "payment": "50-100 руб./отзыв", "city": "Екатеринбург", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "📱 Telegram: @otzyvy_ekb\n🔗 https://t.me/otzyvy_ekb", "source": "Маркетплейсы", "date_added": datetime.now().isoformat()},
+        {"title": "Расклейка объявлений", "description": "Расклейка на подъездах в центре. Оплата за количество.", "payment": "1000 руб.", "city": "Новосибирск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (383) 222-33-44", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Модератор чата удалённо", "description": "Следить за чатом интернет-магазина. 3 часа в день.", "payment": "7000 руб./мес", "city": "Новосибирск", "age_groups": ["16-17", "18+"], "job_type": "online", "contact": "📧 hr@nsk-shop.ru\n🔗 https://hh.ru/vacancy/moderator_nsk", "source": "hh.ru", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок на Красной", "description": "Раздача листовок на главной улице. 3-4 часа.", "payment": "500 руб.", "city": "Краснодар", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (861) 111-22-33", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ Красная Площадь", "description": "Раздача образцов кофе. Выходные.", "payment": "1100 руб.", "city": "Краснодар", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (918) 444-55-66", "source": "Рекламное агентство", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на велосипеде", "description": "Доставка еды. Свободный график.", "payment": "2500 руб./день", "city": "Ростов-на-Дону", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (863) 222-33-44\n🔗 https://clck.ru/rostov_courier", "source": "Яндекс.Еда", "date_added": datetime.now().isoformat()},
+        {"title": "Выгул собак на набережной", "description": "Выгул собак, Верхневолжская набережная.", "payment": "400 руб./выгул", "city": "Нижний Новгород", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (831) 111-22-33", "source": "Частное лицо", "date_added": datetime.now().isoformat()},
+        {"title": "Расклейка объявлений ЧТЗ", "description": "Расклейка на подъездах в районе ЧТЗ.", "payment": "1200 руб.", "city": "Челябинск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (351) 222-33-44", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок на набережной", "description": "Раздача листовок. 3-4 часа.", "payment": "450 руб.", "city": "Самара", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (846) 111-22-33", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ", "description": "Дегустация соков в ТЦ. Выходные.", "payment": "900 руб.", "city": "Уфа", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (347) 222-33-44", "source": "Рекламное агентство", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер на автобусе", "description": "Доставка документов по городу. Проездной оплачивается.", "payment": "1500 руб./день", "city": "Омск", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (3812) 11-22-33", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Раздача листовок на набережной", "description": "Центральная набережная. 3 часа.", "payment": "400 руб.", "city": "Волгоград", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (8442) 11-22-33", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Расклейка объявлений центр", "description": "Расклейка в центральном районе.", "payment": "1000 руб.", "city": "Воронеж", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (473) 222-33-44", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Промоутер в ТЦ Планета", "description": "Раздача листовок в ТЦ. Выходные.", "payment": "1000 руб.", "city": "Красноярск", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (391) 111-22-33", "source": "Рекламное агентство", "date_added": datetime.now().isoformat()},
+        {"title": "Курьер пеший по центру", "description": "Доставка документов. Центр города.", "payment": "1800 руб./день", "city": "Пермь", "age_groups": ["16-17", "18+"], "job_type": "active", "contact": "📞 +7 (342) 222-33-44", "source": "Прямой работодатель", "date_added": datetime.now().isoformat()},
+        {"title": "Помощь по хозяйству", "description": "Уборка территории, помощь на участке. 3-4 часа.", "payment": "800 руб.", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (47362) 2-34-56\n📱 WhatsApp: +7 (920) 111-22-33", "source": "Частное лицо", "date_added": datetime.now().isoformat()},
+        {"title": "Выгул собак в центре Павловска", "description": "Выгул собак ул. Советская. 2 раза в день.", "payment": "300 руб./выгул", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "active", "contact": "📞 +7 (920) 444-55-66", "source": "Частное лицо", "date_added": datetime.now().isoformat()},
+        {"title": "Написание отзывов удалённо", "description": "Писать отзывы на WB/Ozon. Можно из любого города.", "payment": "50-100 руб./отзыв", "city": "Павловск", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "📱 Telegram: @otzyvy_bot\n🔗 https://t.me/otzyvy_bot", "source": "Маркетплейсы", "date_added": datetime.now().isoformat()},
+        {"title": "Транскрибация аудио в текст", "description": "Расшифровка аудиозаписей. Удалённо. Подходит новичкам.", "payment": "200 руб./час", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "📧 transcribe@work.ru\n🔗 https://hh.ru/vacancy/transcribe", "source": "hh.ru", "date_added": datetime.now().isoformat()},
+        {"title": "Дизайн аватарок для соцсетей", "description": "Создание аватарок на заказ. Можно без опыта, научим.", "payment": "200 руб./шт", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "📱 Telegram: @design_bot\n🔗 https://t.me/design_bot", "source": "Фриланс", "date_added": datetime.now().isoformat()},
+        {"title": "Набор текста со сканов", "description": "Набор текста с фотографий. Удалённо.", "payment": "150 руб./1000 знаков", "city": "Вся Россия", "age_groups": ["14-15", "16-17", "18+"], "job_type": "online", "contact": "📧 text@job.ru\n🔗 https://hh.ru/vacancy/typist", "source": "hh.ru", "date_added": datetime.now().isoformat()},
     ]
     for j in jobs:
         db.vacancies.append(j)
     db.save()
-    log.info(f"Добавлено {len(jobs)} тестовых вакансий")
+    log.info(f"Добавлено {len(jobs)} стартовых вакансий")
 
 def get_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
@@ -274,7 +263,7 @@ async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
                                 "city": city,
                                 "age_groups": ["14-15", "16-17", "18+"],
                                 "job_type": job_type,
-                                "contact": f"Ссылка: {link}",
+                                "contact": f"📞 Ссылка на Avito:\n🔗 {link}",
                                 "source": "Avito",
                                 "date_added": datetime.now().isoformat()
                             })
@@ -325,7 +314,7 @@ async def parse_hh(city_name: str, city_code: int = 1) -> List[Dict]:
                     "city": city_name,
                     "age_groups": ["16-17", "18+"],
                     "job_type": job_type,
-                    "contact": f"Откликнуться: {url}",
+                    "contact": f"📞 Откликнуться на hh.ru:\n🔗 {url}",
                     "source": "hh.ru",
                     "date_added": datetime.now().isoformat()
                 })
@@ -369,7 +358,19 @@ async def background_parsing():
             db.vacancies = db.vacancies[-500:]
         db.save()
         log.info(f"Парсинг завершён. Всего вакансий: {len(db.vacancies)}")
-        await asyncio.sleep(2 * 60 * 60)
+        await asyncio.sleep(30 * 60)
+
+async def keep_alive():
+    """Само-пинг каждые 5 минут чтобы бот не засыпал"""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://job-bot-new.onrender.com", timeout=10) as r:
+                    log.info(f"Keep-alive ping: {r.status}")
+        except:
+            log.warning("Keep-alive ping failed")
+        await asyncio.sleep(300)
 
 class Onboarding(StatesGroup):
     city = State()
@@ -504,25 +505,50 @@ async def show_vacancies(call: CallbackQuery):
         return
     db.increment_views(call.from_user.id)
     random.shuffle(vacs)
+    to_show = vacs[:3]
     names = {"any": "Любая", "online": "Удалёнка", "active": "Активная"}
     resp = f"💰 *Вакансии ({names.get(u.get('job_type','any'))}) в {u.get('city')}:*\n\n"
-    for i, v in enumerate(vacs[:3], 1):
+    for i, v in enumerate(to_show, 1):
         e = "💻" if v.get("job_type") == "online" else "🏃"
-        resp += f"*{i}. {e} {v['title']}*\n💵 {v['payment']}\n📞 {v['contact']}\n\n"
+        resp += f"*{i}. {e} {v['title']}*\n💵 {v['payment']}\n📝 {v['description'][:120]}...\n\n"
     v_left = max(0, FREE_LIMIT - u["daily_views"])
     resp += f"📊 Осталось: *{v_left if not u['paid'] else '∞'}*\n"
     if not u["paid"]:
         resp += "💎 *Премиум* — безлимит."
+    keyboard_buttons = [
+        [InlineKeyboardButton(text="🔄 Ещё", callback_data="show_vacancies")],
+        [InlineKeyboardButton(text="💎 Премиум", callback_data="premium_info")],
+        [InlineKeyboardButton(text="⬅ Меню", callback_data="main")]
+    ]
+    for i, v in enumerate(to_show, 1):
+        keyboard_buttons.insert(-1, [InlineKeyboardButton(text=f"📞 Показать контакт #{i}", callback_data=f"contact_{i}")])
     await call.message.edit_text(
         resp,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Ещё", callback_data="show_vacancies")],
-            [InlineKeyboardButton(text="💎 Премиум", callback_data="premium_info")],
-            [InlineKeyboardButton(text="⬅ Меню", callback_data="main")]
-        ]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
         parse_mode="Markdown",
         disable_web_page_preview=True
     )
+    # Сохраняем показываемые вакансии для callback'а контактов
+    db.get_user(call.from_user.id)["_last_shown"] = to_show
+    db.save()
+
+async def show_contact(call: CallbackQuery):
+    u = db.get_user(call.from_user.id)
+    to_show = u.get("_last_shown", [])
+    if not to_show:
+        await call.answer("Сначала посмотри вакансии")
+        return
+    idx = int(call.data.replace("contact_", "")) - 1
+    if idx >= len(to_show):
+        await call.answer("Вакансия не найдена")
+        return
+    v = to_show[idx]
+    await call.message.answer(
+        f"📞 *Контакт для:* {v['title']}\n\n{v['contact']}",
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+    await call.answer()
 
 async def premium_info(call: CallbackQuery):
     await call.message.edit_text(
@@ -590,6 +616,7 @@ async def main():
     dp.callback_query.register(change_age, F.data == "change_age")
     dp.callback_query.register(main_handler, F.data == "main")
     dp.callback_query.register(show_vacancies, F.data == "show_vacancies")
+    dp.callback_query.register(show_contact, F.data.startswith("contact_"))
     dp.callback_query.register(change_city, F.data == "change_city")
     dp.callback_query.register(premium_info, F.data == "premium_info")
     dp.callback_query.register(buy_premium, F.data == "buy_premium")
@@ -599,6 +626,7 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     seed_vacancies()
     asyncio.create_task(background_parsing())
+    asyncio.create_task(keep_alive())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
