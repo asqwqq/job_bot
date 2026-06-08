@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 3.0
+БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 3.0 FINAL
 - Категории внутри типов работы
 - Рейтинг работодателей (👍/👎)
 - Реферальная система
@@ -27,6 +27,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
+# ========== НАСТРОЙКИ ==========
 BOT_TOKEN = "8883834523:AAGEabtv8AZ84PrlEBYL4gNCo22WYQgcJ0U"
 DEEPSEEK_API_KEY = "sk-5cdac197514c404ab7b10935fb2dc996"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -37,6 +38,7 @@ BOT_USERNAME = "rabotka_239_bot"
 PREMIUM_PRICE = 150
 FREE_LIMIT = 3
 REFERRAL_BONUS_DAYS = 1
+RENDER_URL = "https://job-bot-v3.onrender.com"  # ← ТВОЙ URL
 
 PROXY_LIST = [
     "http://45.12.16.114:8080", "http://178.208.83.34:8080", "http://109.248.14.19:8080",
@@ -419,7 +421,6 @@ async def background_parsing():
         await asyncio.sleep(30*60)
 
 async def daily_notifications(bot: Bot):
-    """Ежедневная рассылка уведомлений Премиум-пользователям"""
     while True:
         await asyncio.sleep(60)
         now = datetime.now()
@@ -429,11 +430,7 @@ async def daily_notifications(bot: Bot):
                     vacs = db.get_vacancies(u["city"], u.get("age_group","16-17"), u.get("job_type","any"), u.get("category","any"))
                     if vacs:
                         try:
-                            await bot.send_message(
-                                uid,
-                                f"🔔 *Новые вакансии в {u['city']}!*\nСегодня {len(vacs)} предложений по твоему фильтру.\nЖми /start чтобы посмотреть.",
-                                parse_mode="Markdown"
-                            )
+                            await bot.send_message(uid, f"🔔 *Новые вакансии в {u['city']}!*\nСегодня {len(vacs)} предложений по твоему фильтру.\nЖми /start чтобы посмотреть.", parse_mode="Markdown")
                         except: pass
             await asyncio.sleep(60)
 
@@ -442,7 +439,7 @@ async def keep_alive():
     while True:
         try:
             async with aiohttp.ClientSession() as s:
-                async with s.get("https://job-bot-final.onrender.com", timeout=10) as r:
+                async with s.get(RENDER_URL, timeout=10) as r:
                     log.info(f"Ping: {r.status}")
         except: pass
         await asyncio.sleep(300)
@@ -499,7 +496,6 @@ def age_keyboard() -> InlineKeyboardMarkup:
 
 async def cmd_start(message: Message, state: FSMContext):
     u = db.get_user(message.from_user.id)
-    # Обработка реферального кода
     args = message.text.split()
     if len(args) > 1:
         code = args[1]
@@ -652,12 +648,7 @@ async def referral_info(call: CallbackQuery):
     code = db.generate_referral_code(call.from_user.id)
     link = f"https://t.me/{BOT_USERNAME}?start={code}"
     u = db.get_user(call.from_user.id)
-    resp = f"👥 *Реферальная система*\n\n"
-    resp += f"Приведи друга — получите по *{REFERRAL_BONUS_DAYS} дню Премиума*!\n\n"
-    resp += f"Твоя ссылка:\n`{link}`\n\n"
-    resp += f"Твой код: `{code}`\n"
-    resp += f"Приглашено: *{u.get('referral_count',0)}* чел.\n\n"
-    resp += "Отправь ссылку другу. Когда он нажмёт /start — бонус начислится автоматически."
+    resp = f"👥 *Реферальная система*\n\nПриведи друга — получите по *{REFERRAL_BONUS_DAYS} дню Премиума*!\n\nТвоя ссылка:\n`{link}`\n\nТвой код: `{code}`\nПриглашено: *{u.get('referral_count',0)}* чел.\n\nОтправь ссылку другу. Когда он нажмёт /start — бонус начислится автоматически."
     await call.message.edit_text(resp, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 Поделиться ссылкой", switch_inline_query=link)],
         [InlineKeyboardButton(text="⬅ Меню", callback_data="main")]
