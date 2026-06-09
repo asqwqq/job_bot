@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 4.0
-- Правильная фильтрация (Фриланс = только удалёнка)
+БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 4.1
+- Правильная фильтрация категорий
 - Защита от дубликатов
-- Поиск с Avito + hh.ru через прокси
-- Компактное меню вакансий
-- Кнопка «Подробнее» с полной информацией
-- Источник вакансии всегда виден
+- Стоп-слова от закладчиков
+- Кнопка «🚩 Жалоба» (авто-скрытие после 3 жалоб)
+- Валидация ручного ввода
+- Защита от спама
+- Меню команд /guides /support
+- Веб-сервер для Render (не засыпает)
 """
 import asyncio
 import json
@@ -26,6 +28,7 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiohttp import web
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = "8883834523:AAGEabtv8AZ84PrlEBYL4gNCo22WYQgcJ0U"
@@ -38,19 +41,20 @@ BOT_USERNAME = "rabotka_239_bot"
 PREMIUM_PRICE = 150
 FREE_LIMIT = 3
 REFERRAL_BONUS_DAYS = 1
-RENDER_URL = "https://job-bot-v3.onrender.com"
+
+# Стоп-слова для фильтрации вакансий и ввода
+STOP_WORDS = [
+    "клад", "закладк", "кладмен", "соль", "скорость", "травк", "шишк", "бошк",
+    "гашиш", "меф", "амф", "фен", "экстази", "лсд", "марк", "героин", "кокаин",
+    "спайс", "снюс", "вейп", "жиж", "одноразк", "залит", "заклад", "магнит",
+    "тайник", "прикоп", "кладк", "наркот", "дур", "план", "гаш", "шмал",
+    "курьер заклад", "работа кладмен", "трава", "фасова", "оптов", "розниц",
+]
 
 PROXY_LIST = [
-    "http://45.12.16.114:8080",
-    "http://178.208.83.34:8080",
-    "http://109.248.14.19:8080",
-    "http://185.221.153.131:8080",
-    "http://95.182.108.149:8080",
-    "http://194.67.200.10:8080",
-    "http://85.193.80.35:8080",
-    "http://91.211.88.10:8080",
-    "http://5.183.130.12:8080",
-    "http://176.119.158.10:8080",
+    "http://45.12.16.114:8080", "http://178.208.83.34:8080",
+    "http://109.248.14.19:8080", "http://185.221.153.131:8080",
+    "http://95.182.108.149:8080", "http://194.67.200.10:8080",
 ]
 
 SCAM_GUIDE = """🛡 *Как не попасть на мошенников*
@@ -68,12 +72,12 @@ SAMOZANYATOST_GUIDE = """📄 *Самозанятость с 14 лет*
 TEMPLATES_GUIDE = """📝 *Шаблоны откликов*
 *Avito:* «Здравствуйте! Заинтересовала вакансия. Мне 16 лет. Тел: [номер]»
 *hh.ru:* «Добрый день! [Имя], 17 лет. Ищу подработку. Контакты: [тел]»
-*Личное:* «Здравствуйте! Увидел объявление. Ответственный, пунктуальный. Тел: [номер]»"""
+*Личное:* «Здравствуйте! Увидел объявление. Ответственный. Тел: [номер]»"""
 
 CATEGORY_NAMES = {
-    "any": "Любая",
-    "dog": "🐕 Выгул собак", "courier": "📦 Курьер", "promo": "📢 Промоутер",
-    "freelance": "💻 Фриланс", "cleaning": "🧹 Уборка", "tutor": "🎓 Репетиторство"
+    "any": "Любая", "dog": "🐕 Выгул собак", "courier": "📦 Курьер",
+    "promo": "📢 Промоутер", "freelance": "💻 Фриланс",
+    "cleaning": "🧹 Уборка", "tutor": "🎓 Репетиторство"
 }
 
 CATEGORY_KEYWORDS = {
@@ -95,6 +99,7 @@ class Database:
         self.users: Dict[int, Dict] = {}
         self.vacancies: List[Dict] = []
         self.ratings: Dict[str, Dict] = {}
+        self.reports: Dict[str, List[int]] = {}
         self.load()
 
     def load(self):
@@ -104,16 +109,18 @@ class Database:
                 self.users = {int(k): v for k, v in data.get("users", {}).items()}
                 self.vacancies = data.get("vacancies", [])
                 self.ratings = data.get("ratings", {})
+                self.reports = data.get("reports", {})
             log.info(f"База: {len(self.users)} пользователей, {len(self.vacancies)} вакансий")
         except:
             self.users = {}
             self.vacancies = []
             self.ratings = {}
+            self.reports = {}
             log.info("База пустая")
 
     def save(self):
         with open(self.path, "w", encoding="utf-8") as f:
-            json.dump({"users": self.users, "vacancies": self.vacancies, "ratings": self.ratings}, f, ensure_ascii=False, indent=2)
+            json.dump({"users": self.users, "vacancies": self.vacancies, "ratings": self.ratings, "reports": self.reports}, f, ensure_ascii=False, indent=2)
 
     def get_user(self, uid: int) -> Dict:
         if uid not in self.users:
@@ -121,9 +128,21 @@ class Database:
                 "city": None, "age_group": None, "job_type": "any", "category": "any",
                 "paid": False, "paid_until": None, "daily_views": 0, "last_view_date": None,
                 "favorites": [], "referral_code": None, "referred_by": None,
-                "referral_count": 0, "notify": False, "joined": datetime.now().isoformat(), "_last_shown": []
+                "referral_count": 0, "notify": False, "joined": datetime.now().isoformat(),
+                "_last_shown": [], "_last_action": 0, "_action_count": 0
             }
         return self.users[uid]
+
+    def check_spam(self, uid: int) -> bool:
+        """Защита от спама: не больше 10 действий в минуту"""
+        user = self.get_user(uid)
+        now = datetime.now().timestamp()
+        if now - user["_last_action"] > 60:
+            user["_action_count"] = 0
+            user["_last_action"] = now
+        user["_action_count"] += 1
+        self.save()
+        return user["_action_count"] <= 10
 
     def can_view(self, uid: int) -> bool:
         user = self.get_user(uid)
@@ -158,8 +177,7 @@ class Database:
     def add_premium_days(self, uid: int, days: int):
         user = self.get_user(uid)
         if user["paid_until"] and datetime.fromisoformat(user["paid_until"]) > datetime.now():
-            current_end = datetime.fromisoformat(user["paid_until"])
-            user["paid_until"] = (current_end + timedelta(days=days)).isoformat()
+            user["paid_until"] = (datetime.fromisoformat(user["paid_until"]) + timedelta(days=days)).isoformat()
         else:
             user["paid_until"] = (datetime.now() + timedelta(days=days)).isoformat()
         user["notify"] = True
@@ -232,6 +250,14 @@ class Database:
             self.ratings[contact]["down"] += 1
         self.save()
 
+    def report_vacancy(self, vacancy_id: str, uid: int) -> int:
+        if vacancy_id not in self.reports:
+            self.reports[vacancy_id] = []
+        if uid not in self.reports[vacancy_id]:
+            self.reports[vacancy_id].append(uid)
+        self.save()
+        return len(self.reports[vacancy_id])
+
     def get_employer_rating(self, contact: str) -> str:
         r = self.ratings.get(contact, {"up": 0, "down": 0})
         total = r["up"] + r["down"]
@@ -245,25 +271,21 @@ class Database:
         city_lower = city.lower().strip()
         results = []
         for v in self.vacancies:
+            if v.get("hidden", False): continue
             v_city = v.get("city", "").lower()
-            v_job_type = v.get("job_type", "active")
-            v_cat = v.get("category", "any")
-            # Проверка города
-            if not (city_lower in v_city or v_city in city_lower or v_city == "вся россия"):
-                continue
-            # Проверка возраста
-            if age_group not in v.get("age_groups", ["14-15", "16-17", "18+"]):
-                continue
-            # Проверка типа (удалёнка/активная)
-            if job_type != "any" and job_type != v_job_type:
-                continue
-            # Проверка категории
-            if category != "any" and category != v_cat:
-                continue
+            if not (city_lower in v_city or v_city in city_lower or v_city == "вся россия"): continue
+            if age_group not in v.get("age_groups", ["14-15", "16-17", "18+"]): continue
+            if job_type != "any" and job_type != v.get("job_type", "active"): continue
+            if category != "any" and category != v.get("category", "any"): continue
             results.append(v)
         return results
 
     def add_vacancy(self, vacancy: Dict):
+        # Проверка на стоп-слова
+        if has_stop_words(vacancy.get("title","") + " " + vacancy.get("description","")):
+            log.warning(f"Стоп-слова в вакансии: {vacancy.get('title','')}")
+            return
+        # Проверка на дубликат
         for v in self.vacancies:
             if (v.get("title") == vacancy.get("title") and 
                 v.get("city") == vacancy.get("city") and
@@ -284,57 +306,55 @@ class Database:
 db = Database()
 
 # ========== ФУНКЦИИ ==========
+def has_stop_words(text: str) -> bool:
+    t = text.lower()
+    return any(sw in t for sw in STOP_WORDS)
+
+def validate_city(text: str) -> bool:
+    """Только кириллица, пробелы, дефис, до 30 символов"""
+    return bool(re.match(r'^[а-яёА-ЯЁ\s\-]{1,30}$', text.strip()))
+
 def classify_category(title: str) -> str:
     t = title.lower()
     for cat, keywords in CATEGORY_KEYWORDS.items():
-        for kw in keywords:
-            if kw in t: return cat
+        if any(kw in t for kw in keywords): return cat
     return "promo"
 
 def classify_job_type(title: str) -> str:
     t = title.lower()
-    for w in ["удалён", "онлайн", "отзыв", "модерат", "копирайт", "текст", "транскриб", "дизайн", "набор текст"]:
-        if w in t: return "online"
+    if any(w in t for w in ["удалён", "онлайн", "отзыв", "модерат", "копирайт", "текст", "транскриб", "дизайн", "набор"]):
+        return "online"
     return "active"
 
 def seed_vacancies():
     if len(db.vacancies) > 0:
         return
     jobs = [
-        # МОСКВА - АКТИВНАЯ
-        {"title":"Раздача листовок у метро Кузнецкий мост","description":"Раздача рекламных листовок. 4 часа в день. Можно без опыта. Оплата сразу после смены.","payment":"500 руб./смена","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (495) 123-45-67\n📱 WhatsApp: +7 (926) 111-22-33","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Курьер на велосипеде/самокате","description":"Доставка еды из ресторанов. Свободный график. Ежедневные выплаты на карту.","payment":"3000 руб./день","city":"Москва","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (495) 222-33-44\n🔗 https://clck.ru/courier_msk","source":"Яндекс.Еда","date_added":datetime.now().isoformat()},
-        {"title":"Выгул собак в центре","description":"Выгул двух собак в районе Хамовники. Утром и вечером по 30 минут.","payment":"500 руб./выгул","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"dog","contact":"📞 +7 (916) 444-55-66","source":"Частное лицо","date_added":datetime.now().isoformat()},
-        {"title":"Расклейка объявлений на подъездах","description":"Расклейка в ЦАО. Оплата за каждую доску. Материалы выдают.","payment":"1500 руб./100 шт","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (903) 777-88-99","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Уборка квартир","description":"Поддерживающая уборка в центре. 2-3 часа. Инвентарь предоставляется.","payment":"1200 руб./уборка","city":"Москва","age_groups":["16-17","18+"],"job_type":"active","category":"cleaning","contact":"📞 +7 (495) 777-88-99","source":"Клининг-сервис","date_added":datetime.now().isoformat()},
-        # МОСКВА - УДАЛЁНКА
-        {"title":"Написание отзывов на маркетплейсах","description":"Писать отзывы на WB, Ozon. Удалённо. Бесплатное обучение.","payment":"100 руб./отзыв","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @otzyvy_bot\n🔗 https://t.me/otzyvy_bot","source":"Маркетплейсы","date_added":datetime.now().isoformat()},
-        {"title":"Модератор чата интернет-магазина","description":"Следить за порядком в чате, отвечать на вопросы. Удалённо. 2-3 часа в день.","payment":"8000 руб./мес","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 hr@fashionshop.ru\n📞 +7 (495) 333-55-66","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Копирайтинг для соцсетей","description":"Написание постов для Instagram/Telegram. Темы: мода, игры, кино.","payment":"300 руб./пост","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 smm@content.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
-        {"title":"Репетитор по математике онлайн","description":"Помощь с домашним заданием 5-7 класс. Онлайн, вечером.","payment":"500 руб./час","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"tutor","contact":"📞 +7 (916) 123-45-67","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        # САНКТ-ПЕТЕРБУРГ
-        {"title":"Промоутер в ТЦ Галерея","description":"Раздача образцов кофе. 3 часа в день. Обучение на месте.","payment":"1200 руб./смена","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (812) 111-22-33","source":"Рекламное агентство","date_added":datetime.now().isoformat()},
-        {"title":"Курьер на самокате","description":"Доставка посылок по центру. Самокат предоставляется.","payment":"2000 руб./день","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (812) 444-55-66","source":"Достависта","date_added":datetime.now().isoformat()},
-        {"title":"Онлайн-консультант в чат","description":"Поддержка клиентов интернет-магазина. Удалённо. Обучение.","payment":"15000 руб./мес","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 job@spb-shop.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
-        # КАЗАНЬ
-        {"title":"Раздача листовок на Баумана","description":"Раздача на пешеходной улице. 3-4 часа.","payment":"400 руб./смена","city":"Казань","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (843) 222-33-44","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Промоутер в ТЦ Кольцо","description":"Дегустация напитков в выходные.","payment":"1000 руб./смена","city":"Казань","age_groups":["16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (917) 555-66-77","source":"Рекламное агентство","date_added":datetime.now().isoformat()},
-        # ЕКАТЕРИНБУРГ
+        {"title":"Раздача листовок у метро Кузнецкий мост","description":"Раздача рекламных листовок. 4 часа. Можно без опыта.","payment":"500 руб./смена","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (495) 123-45-67\n📱 WhatsApp: +7 (926) 111-22-33","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
+        {"title":"Курьер на велосипеде/самокате","description":"Доставка еды. Свободный график. Ежедневные выплаты.","payment":"3000 руб./день","city":"Москва","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (495) 222-33-44\n🔗 https://clck.ru/courier_msk","source":"Яндекс.Еда","date_added":datetime.now().isoformat()},
+        {"title":"Выгул собак в центре","description":"Хамовники. 2 раза в день.","payment":"500 руб./выгул","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"dog","contact":"📞 +7 (916) 444-55-66","source":"Частное лицо","date_added":datetime.now().isoformat()},
+        {"title":"Расклейка объявлений","description":"ЦАО. Оплата за доску.","payment":"1500 руб.","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (903) 777-88-99","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
+        {"title":"Уборка квартир","description":"Центр. 2-3 часа. Инвентарь дают.","payment":"1200 руб.","city":"Москва","age_groups":["16-17","18+"],"job_type":"active","category":"cleaning","contact":"📞 +7 (495) 777-88-99","source":"Клининг-сервис","date_added":datetime.now().isoformat()},
+        {"title":"Написание отзывов на маркетплейсах","description":"Удалённо. WB, Ozon. Обучение бесплатно.","payment":"100 руб./отзыв","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @otzyvy_bot\n🔗 https://t.me/otzyvy_bot","source":"Маркетплейсы","date_added":datetime.now().isoformat()},
+        {"title":"Модератор чата интернет-магазина","description":"Удалённо. 2-3 часа в день.","payment":"8000 руб./мес","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 hr@fashionshop.ru\n📞 +7 (495) 333-55-66","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
+        {"title":"Копирайтинг для соцсетей","description":"Посты для Instagram/TG.","payment":"300 руб./пост","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 smm@content.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
+        {"title":"Репетитор по математике онлайн","description":"Помощь с домашкой 5-7 класс. Онлайн.","payment":"500 руб./час","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"tutor","contact":"📞 +7 (916) 123-45-67","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
+        {"title":"Промоутер в ТЦ Галерея","description":"Раздача образцов. 3 часа.","payment":"1200 руб.","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (812) 111-22-33","source":"Рекламное агентство","date_added":datetime.now().isoformat()},
+        {"title":"Курьер на самокате","description":"Доставка посылок. Самокат дают.","payment":"2000 руб./день","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (812) 444-55-66","source":"Достависта","date_added":datetime.now().isoformat()},
+        {"title":"Онлайн-консультант","description":"Поддержка клиентов. Удалённо.","payment":"15000 руб./мес","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 job@spb-shop.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
+        {"title":"Раздача листовок на Баумана","description":"Пешеходная улица. 3-4 часа.","payment":"400 руб.","city":"Казань","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (843) 222-33-44","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
+        {"title":"Промоутер в ТЦ Кольцо","description":"Дегустация напитков.","payment":"1000 руб.","city":"Казань","age_groups":["16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (917) 555-66-77","source":"Рекламное агентство","date_added":datetime.now().isoformat()},
         {"title":"Курьер на самокате","description":"Доставка посылок.","payment":"2000 руб./день","city":"Екатеринбург","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (343) 111-22-33","source":"Достависта","date_added":datetime.now().isoformat()},
-        {"title":"Написание отзывов удалённо","description":"Писать отзывы на WB/Ozon.","payment":"100 руб./отзыв","city":"Екатеринбург","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @otzyvy_ekb","source":"Маркетплейсы","date_added":datetime.now().isoformat()},
-        # НОВОСИБИРСК
-        {"title":"Расклейка объявлений","description":"Расклейка в центре.","payment":"1000 руб.","city":"Новосибирск","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (383) 222-33-44","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Модератор чата удалённо","description":"Следить за чатом. 3 часа в день.","payment":"7000 руб./мес","city":"Новосибирск","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 hr@nsk-shop.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
-        # НИЖНИЙ НОВГОРОД
+        {"title":"Написание отзывов удалённо","description":"Удалённо. WB/Ozon.","payment":"100 руб./отзыв","city":"Екатеринбург","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @otzyvy_ekb","source":"Маркетплейсы","date_added":datetime.now().isoformat()},
+        {"title":"Расклейка объявлений","description":"Центр.","payment":"1000 руб.","city":"Новосибирск","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (383) 222-33-44","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
+        {"title":"Модератор чата удалённо","description":"Следить за чатом. 3 часа.","payment":"7000 руб./мес","city":"Новосибирск","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 hr@nsk-shop.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
         {"title":"Выгул собак на набережной","description":"Выгул утром и вечером.","payment":"400 руб./выгул","city":"Нижний Новгород","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"dog","contact":"📞 +7 (831) 111-22-33","source":"Частное лицо","date_added":datetime.now().isoformat()},
-        # ПАВЛОВСК
         {"title":"Помощь по хозяйству","description":"Уборка территории, помощь на участке.","payment":"800 руб.","city":"Павловск","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"cleaning","contact":"📞 +7 (47362) 2-34-56\n📱 WhatsApp: +7 (920) 111-22-33","source":"Частное лицо","date_added":datetime.now().isoformat()},
         {"title":"Выгул собак в центре Павловска","description":"Ул. Советская. 2 раза в день.","payment":"300 руб./выгул","city":"Павловск","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"dog","contact":"📞 +7 (920) 444-55-66","source":"Частное лицо","date_added":datetime.now().isoformat()},
         {"title":"Написание отзывов удалённо","description":"Писать отзывы на WB/Ozon.","payment":"100 руб./отзыв","city":"Павловск","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @otzyvy_bot","source":"Маркетплейсы","date_added":datetime.now().isoformat()},
-        # ВСЯ РОССИЯ - УДАЛЁНКА
-        {"title":"Транскрибация аудио в текст","description":"Расшифровка аудиозаписей. Удалённо. Подходит новичкам.","payment":"200 руб./час","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 transcribe@work.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
-        {"title":"Дизайн аватарок для соцсетей","description":"Создание аватарок на заказ. Можно без опыта.","payment":"200 руб./шт","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @design_bot","source":"Фриланс","date_added":datetime.now().isoformat()},
-        {"title":"Набор текста со сканов","description":"Набор текста с фотографий. Удалённо.","payment":"150 руб./1000 знаков","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 text@job.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
+        {"title":"Транскрибация аудио","description":"Расшифровка в текст. Удалённо.","payment":"200 руб./час","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 transcribe@work.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
+        {"title":"Дизайн аватарок","description":"Аватарки для соцсетей.","payment":"200 руб./шт","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @design_bot","source":"Фриланс","date_added":datetime.now().isoformat()},
+        {"title":"Набор текста со сканов","description":"Набор текста. Удалённо.","payment":"150 руб./1000 зн.","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 text@job.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
     ]
     for j in jobs:
         db.add_vacancy(j)
@@ -344,35 +364,28 @@ def seed_vacancies():
 def get_proxy():
     return random.choice(PROXY_LIST) if PROXY_LIST else None
 
-async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
+async def parse_avito(city: str, pages: int = 1) -> List[Dict]:
     vacancies = []
-    city_domains = {
-        "москва":"moskva","санкт-петербург":"sankt-peterburg","спб":"sankt-peterburg",
-        "казань":"kazan","екатеринбург":"ekaterinburg","новосибирск":"novosibirsk",
-        "краснодар":"krasnodar","ростов-на-дону":"rostov-na-donu",
-        "нижний новгород":"nizhniy_novgorod","челябинск":"chelyabinsk",
-        "самара":"samara","уфа":"ufa","омск":"omsk","пермь":"perm",
-        "воронеж":"voronezh","волгоград":"volgograd","красноярск":"krasnoyarsk",
-    }
+    city_domains = {"москва":"moskva","санкт-петербург":"sankt-peterburg","спб":"sankt-peterburg","казань":"kazan","екатеринбург":"ekaterinburg","новосибирск":"novosibirsk"}
     domain = city_domains.get(city.lower().strip(), city.lower().strip().replace(" ","_"))
     keywords = ["подработка+с+14+лет","работа+для+школьников","промоутер","курьер+с+16"]
     headers_list = [
         {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"},
         {"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36"},
     ]
-    for keyword in keywords[:2]:
+    for keyword in keywords[:1]:
         for page in range(1, pages+1):
             url = f"https://www.avito.ru/{domain}?q={keyword}&p={page}"
             headers = random.choice(headers_list)
             proxy = get_proxy()
             try:
                 async with aiohttp.ClientSession() as s:
-                    async with s.get(url, headers=headers, proxy=proxy, timeout=25) as r:
+                    async with s.get(url, headers=headers, proxy=proxy, timeout=20) as r:
                         if r.status != 200: continue
                         html = await r.text()
                 soup = BeautifulSoup(html, "html.parser")
                 items = soup.find_all("div", {"data-marker":"item"})
-                for item in items[:3]:
+                for item in items[:2]:
                     try:
                         t_e = item.find("h3",{"itemprop":"name"})
                         p_e = item.find("meta",{"itemprop":"price"})
@@ -380,28 +393,26 @@ async def parse_avito(city: str, pages: int = 2) -> List[Dict]:
                         title = t_e.text.strip() if t_e else "Без названия"
                         price = p_e.get("content","Не указана") if p_e else "Не указана"
                         link = "https://www.avito.ru"+l_e.get("href","") if l_e else url
-                        if any(w in title.lower() for w in ["14","15","16","17","школьник","студент","подработк","промоутер","курьер","раздач","расклейк"]):
+                        if any(w in title.lower() for w in ["14","15","16","17","школьник","студент","подработк"]):
                             vacancies.append({
-                                "title":title,"description":f"Вакансия с Avito: {title}",
+                                "title":title,"description":f"С Avito: {title}",
                                 "payment":f"{price} руб." if price!="Не указана" else "Договорная",
                                 "city":city,"age_groups":["14-15","16-17","18+"],
                                 "job_type":classify_job_type(title),"category":classify_category(title),
-                                "contact":f"🔗 {link}",
-                                "source":"Avito","date_added":datetime.now().isoformat()
+                                "contact":f"🔗 {link}","source":"Avito","date_added":datetime.now().isoformat()
                             })
                     except: continue
-                await asyncio.sleep(random.uniform(3,8))
+                await asyncio.sleep(random.uniform(2,5))
             except: continue
-    log.info(f"Avito: найдено {len(vacancies)} для {city}")
     return vacancies
 
 async def parse_hh(city_name: str, city_code: int = 1) -> List[Dict]:
     vacancies = []
-    params = {"text":"подработка OR школьник OR студент OR без опыта OR промоутер OR курьер","area":city_code,"experience":"noExperience","employment":"part","per_page":10,"page":0,"period":7}
+    params = {"text":"подработка OR школьник OR студент OR без опыта","area":city_code,"experience":"noExperience","employment":"part","per_page":5,"page":0,"period":7}
     proxy = get_proxy()
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(HH_API_URL, params=params, proxy=proxy, timeout=20) as r:
+            async with s.get(HH_API_URL, params=params, proxy=proxy, timeout=15) as r:
                 if r.status != 200: return []
                 data = await r.json()
         for item in data.get("items",[]):
@@ -414,32 +425,30 @@ async def parse_hh(city_name: str, city_code: int = 1) -> List[Dict]:
                 resp_text = item.get("snippet",{}).get("responsibility","") or ""
                 resp_text = re.sub(r'<[^>]+>','',resp_text)
                 vacancies.append({
-                    "title":title,"description":f"{employer}. {resp_text[:200]}...",
+                    "title":title,"description":f"{employer}. {resp_text[:150]}...",
                     "payment":payment,"city":city_name,"age_groups":["16-17","18+"],
                     "job_type":classify_job_type(title),"category":classify_category(title),
-                    "contact":f"🔗 {url}",
-                    "source":"hh.ru","date_added":datetime.now().isoformat()
+                    "contact":f"🔗 {url}","source":"hh.ru","date_added":datetime.now().isoformat()
                 })
             except: continue
     except: pass
-    log.info(f"hh.ru: найдено {len(vacancies)} для {city_name}")
     return vacancies
 
 async def background_parsing():
-    cities = ["Москва","Санкт-Петербург","Казань","Екатеринбург","Новосибирск","Краснодар","Нижний Новгород","Челябинск","Самара","Уфа","Омск","Волгоград","Воронеж","Красноярск","Пермь","Ростов-на-Дону"]
-    codes = {"Москва":1,"Санкт-Петербург":2,"Казань":88,"Екатеринбург":3,"Новосибирск":4,"Краснодар":53,"Нижний Новгород":66,"Челябинск":104,"Самара":78,"Уфа":99,"Омск":68,"Волгоград":40,"Воронеж":26,"Красноярск":54,"Пермь":72,"Ростов-на-Дону":76}
+    cities = ["Москва","Санкт-Петербург","Казань","Екатеринбург","Новосибирск"]
+    codes = {"Москва":1,"Санкт-Петербург":2,"Казань":88,"Екатеринбург":3,"Новосибирск":4}
     while True:
         log.info("Парсинг запущен")
-        for city in cities[:5]:
+        for city in cities:
             try:
-                for v in await parse_avito(city,1): db.add_vacancy(v)
+                for v in await parse_avito(city): db.add_vacancy(v)
             except Exception as e: log.error(f"Avito {city}: {e}")
             try:
                 for v in await parse_hh(city, codes.get(city,1)): db.add_vacancy(v)
             except Exception as e: log.error(f"hh {city}: {e}")
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
         db.vacancies = [v for v in db.vacancies if datetime.fromisoformat(v["date_added"]) > datetime.now()-timedelta(days=14)]
-        if len(db.vacancies) > 500: db.vacancies = db.vacancies[-500:]
+        if len(db.vacancies) > 300: db.vacancies = db.vacancies[-300:]
         db.save()
         log.info(f"Парсинг завершён. Вакансий: {len(db.vacancies)}")
         await asyncio.sleep(30*60)
@@ -449,24 +458,29 @@ async def daily_notifications(bot: Bot):
         await asyncio.sleep(60)
         now = datetime.now()
         if now.hour == 10 and now.minute == 0:
-            for uid, u in db.users.items():
-                if db.is_premium(uid) and u.get("notify") and u.get("city"):
-                    vacs = db.get_vacancies(u["city"], u.get("age_group","16-17"), u.get("job_type","any"), u.get("category","any"))
-                    if vacs:
-                        try:
-                            await bot.send_message(uid, f"🔔 *Новые вакансии в {u['city']}!*\nСегодня {len(vacs)} предложений по твоему фильтру.\nЖми /start.", parse_mode="Markdown")
-                        except: pass
+            for uid in list(db.users.keys())[:50]:
+                if db.is_premium(uid):
+                    u = db.get_user(uid)
+                    if u.get("notify") and u.get("city"):
+                        vacs = db.get_vacancies(u["city"], u.get("age_group","16-17"), u.get("job_type","any"), u.get("category","any"))
+                        if vacs:
+                            try: await bot.send_message(uid, f"🔔 *Новые вакансии в {u['city']}!*\nСегодня {len(vacs)} предложений.\nЖми /start.", parse_mode="Markdown")
+                            except: pass
             await asyncio.sleep(60)
 
-async def keep_alive():
-    await asyncio.sleep(60)
-    while True:
-        try:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(RENDER_URL, timeout=10) as r:
-                    log.info(f"Ping: {r.status}")
-        except: pass
-        await asyncio.sleep(300)
+# Веб-сервер чтобы Render не засыпал
+async def handle_health(request):
+    return web.Response(text="OK")
+
+async def run_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_health)
+    app.router.add_get("/health", handle_health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    log.info("Веб-сервер запущен на порту 8080")
 
 class Onboarding(StatesGroup):
     city = State()
@@ -474,7 +488,6 @@ class Onboarding(StatesGroup):
     job_type = State()
     category = State()
 
-# ========== КЛАВИАТУРЫ ==========
 def main_menu(is_premium: bool = False) -> InlineKeyboardMarkup:
     btns = [
         [InlineKeyboardButton(text="💰 Смотреть вакансии", callback_data="show_vacancies")],
@@ -517,14 +530,12 @@ def age_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅ Назад", callback_data="main")],
     ])
 
-# ========== ОБРАБОТЧИКИ ==========
 async def cmd_start(message: Message, state: FSMContext):
     u = db.get_user(message.from_user.id)
     args = message.text.split()
     if len(args) > 1:
-        code = args[1]
-        if db.process_referral(message.from_user.id, code):
-            await message.answer(f"🎉 *Реферальный код активирован!*\nВы получили +{REFERRAL_BONUS_DAYS} день Премиума!", parse_mode="Markdown")
+        if db.process_referral(message.from_user.id, args[1]):
+            await message.answer(f"🎉 *Реферальный код активирован!* +{REFERRAL_BONUS_DAYS} день Премиума!", parse_mode="Markdown")
     if not u["city"]:
         await message.answer("👋 *Привет!*\nВ каком городе ищешь работу?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Москва", callback_data="setcity_Москва")],
@@ -540,7 +551,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def set_city(call: CallbackQuery, state: FSMContext):
     city = call.data.replace("setcity_","")
     if city == "other":
-        await call.message.edit_text("📍 Напиши название города:", parse_mode="Markdown")
+        await call.message.edit_text("📍 Напиши название города (только русские буквы):", parse_mode="Markdown")
         await state.set_state(Onboarding.city)
         return
     db.set_city(call.from_user.id, city)
@@ -548,20 +559,26 @@ async def set_city(call: CallbackQuery, state: FSMContext):
     await state.set_state(Onboarding.age)
 
 async def process_city(message: Message, state: FSMContext):
-    db.set_city(message.from_user.id, message.text.strip())
-    await message.answer(f"📍 *{message.text}*\nУкажи возраст:", reply_markup=age_keyboard(), parse_mode="Markdown")
+    city = message.text.strip()
+    if not validate_city(city):
+        await message.answer("❌ Только русские буквы, без цифр и спецсимволов. Попробуй ещё раз:")
+        return
+    if has_stop_words(city):
+        await message.answer("❌ Некорректное название. Попробуй ещё раз:")
+        return
+    db.set_city(message.from_user.id, city)
+    await message.answer(f"📍 *{city}*\nУкажи возраст:", reply_markup=age_keyboard(), parse_mode="Markdown")
     await state.set_state(Onboarding.age)
 
 async def set_age(call: CallbackQuery, state: FSMContext):
-    age = call.data.replace("setage_","")
-    db.set_age(call.from_user.id, age)
-    await call.message.edit_text(f"✅ *Возраст: {age}*\nВыбери тип работы:", reply_markup=job_type_keyboard(), parse_mode="Markdown")
+    db.set_age(call.from_user.id, call.data.replace("setage_",""))
+    await call.message.edit_text(f"✅ Выбери тип работы:", reply_markup=job_type_keyboard(), parse_mode="Markdown")
     await state.set_state(Onboarding.job_type)
 
 async def set_job_type(call: CallbackQuery, state: FSMContext):
     jt = call.data.replace("jobtype_","")
     db.set_job_type(call.from_user.id, jt)
-    await call.message.edit_text(f"✅ *Тип: {CATEGORY_NAMES.get(jt)}*\nВыбери категорию:", reply_markup=category_keyboard(jt), parse_mode="Markdown")
+    await call.message.edit_text(f"✅ Выбери категорию:", reply_markup=category_keyboard(jt), parse_mode="Markdown")
     await state.set_state(Onboarding.category)
 
 async def set_category(call: CallbackQuery, state: FSMContext):
@@ -570,26 +587,25 @@ async def set_category(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(f"✅ *Готово!*\nКатегория: *{CATEGORY_NAMES.get(cat)}*\nЖми «Смотреть вакансии»", reply_markup=main_menu(db.is_premium(call.from_user.id)), parse_mode="Markdown")
     await state.clear()
 
-async def change_job_type(call: CallbackQuery):
-    await call.message.edit_text("🔧 *Тип работы:*", reply_markup=job_type_keyboard(), parse_mode="Markdown")
-
+async def change_job_type(call: CallbackQuery): await call.message.edit_text("🔧 *Тип работы:*", reply_markup=job_type_keyboard(), parse_mode="Markdown")
 async def change_category(call: CallbackQuery):
     u = db.get_user(call.from_user.id)
     await call.message.edit_text("📂 *Категория:*", reply_markup=category_keyboard(u.get("job_type","any")), parse_mode="Markdown")
-
 async def change_age(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("👤 *Возраст:*", reply_markup=age_keyboard(), parse_mode="Markdown")
     await state.set_state(Onboarding.age)
 
 async def show_vacancies(call: CallbackQuery):
+    if not db.check_spam(call.from_user.id):
+        await call.answer("⚠️ Слишком много запросов. Подожди минуту.")
+        return
     u = db.get_user(call.from_user.id)
     if not u["city"]:
         await call.message.edit_text("Сначала /start", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]))
         return
     if not db.can_view(call.from_user.id):
         await call.message.edit_text("🚫 *Лимит.*\n💎 Премиум — безлимит за 149 руб.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Купить", callback_data="buy_premium")],
-            [InlineKeyboardButton(text="⬅ Меню", callback_data="main")]
+            [InlineKeyboardButton(text="💎 Купить", callback_data="buy_premium")], [InlineKeyboardButton(text="⬅ Меню", callback_data="main")]
         ]), parse_mode="Markdown")
         return
     vacs = db.get_vacancies(u.get("city","Москва"), u.get("age_group","16-17"), u.get("job_type","any"), u.get("category","any"))
@@ -601,22 +617,19 @@ async def show_vacancies(call: CallbackQuery):
     to_show = vacs[:3]
     db.get_user(call.from_user.id)["_last_shown"] = to_show
     db.save()
-    
-    # Компактный вывод
     resp = f"💰 *Вакансии в {u.get('city')}*\n📂 {CATEGORY_NAMES.get(u.get('category','any'))} | 👤 {u.get('age_group')}\n\n"
     for i, v in enumerate(to_show, 1):
         e = "💻" if v.get("job_type")=="online" else "🏃"
         resp += f"*{i}. {e} {v['title']}*\n💵 {v['payment']} | {v['source']}\n\n"
     v_left = max(0, FREE_LIMIT - u["daily_views"])
     resp += f"📊 Осталось: *{v_left if not db.is_premium(call.from_user.id) else '∞'}*\n"
-    
-    # Компактные кнопки
+    vid = lambda i: f"{to_show[i].get('title','')}_{to_show[i].get('city','')}"
     kb = [
-        [InlineKeyboardButton(text="🔄 Ещё вакансии", callback_data="show_vacancies")],
-        [InlineKeyboardButton(text="ℹ️ Подробнее #1", callback_data="detail_0"), InlineKeyboardButton(text="📞 #1", callback_data="contact_0")],
-        [InlineKeyboardButton(text="ℹ️ Подробнее #2", callback_data="detail_1"), InlineKeyboardButton(text="📞 #2", callback_data="contact_1")],
-        [InlineKeyboardButton(text="ℹ️ Подробнее #3", callback_data="detail_2"), InlineKeyboardButton(text="📞 #3", callback_data="contact_2")],
-        [InlineKeyboardButton(text="⭐ Избранное", callback_data="fav_menu"), InlineKeyboardButton(text="👍👎 Рейтинг", callback_data="rate_menu")],
+        [InlineKeyboardButton(text="🔄 Ещё", callback_data="show_vacancies")],
+        [InlineKeyboardButton(text="ℹ️ #1", callback_data="detail_0"), InlineKeyboardButton(text="📞 #1", callback_data="contact_0"), InlineKeyboardButton(text="🚩 #1", callback_data=f"report_0")],
+        [InlineKeyboardButton(text="ℹ️ #2", callback_data="detail_1"), InlineKeyboardButton(text="📞 #2", callback_data="contact_1"), InlineKeyboardButton(text="🚩 #2", callback_data=f"report_1")],
+        [InlineKeyboardButton(text="ℹ️ #3", callback_data="detail_2"), InlineKeyboardButton(text="📞 #3", callback_data="contact_2"), InlineKeyboardButton(text="🚩 #3", callback_data=f"report_2")],
+        [InlineKeyboardButton(text="⭐ Избранное", callback_data="fav_menu"), InlineKeyboardButton(text="👍👎 Оценить", callback_data="rate_menu")],
         [InlineKeyboardButton(text="⬅ Меню", callback_data="main")],
     ]
     await call.message.edit_text(resp, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown", disable_web_page_preview=True)
@@ -628,15 +641,7 @@ async def show_detail(call: CallbackQuery):
     if idx >= len(to_show): await call.answer("Нет такой"); return
     v = to_show[idx]
     rating = db.get_employer_rating(v.get("contact",""))
-    resp = f"*{v['title']}*\n\n"
-    resp += f"📝 *Описание:* {v['description']}\n\n"
-    resp += f"💵 *Оплата:* {v['payment']}\n"
-    resp += f"📍 *Город:* {v.get('city','Не указан')}\n"
-    resp += f"👤 *Возраст:* {', '.join(v.get('age_groups',[]))}\n"
-    resp += f"📂 *Тип:* {'Удалёнка' if v.get('job_type')=='online' else 'Активная'}\n"
-    resp += f"🔹 *Источник:* {v.get('source','Не указан')}\n"
-    resp += f"⭐ *Рейтинг:* {rating}\n\n"
-    resp += f"📞 *Контакты:*\n{v.get('contact','Не указаны')}"
+    resp = f"*{v['title']}*\n\n📝 {v['description']}\n\n💵 {v['payment']}\n📍 {v.get('city','?')}\n👤 {', '.join(v.get('age_groups',[]))}\n📂 {'Удалёнка' if v.get('job_type')=='online' else 'Активная'}\n🔹 {v.get('source','?')}\n⭐ {rating}\n\n📞 {v.get('contact','')}"
     await call.message.answer(resp, parse_mode="Markdown", disable_web_page_preview=True)
     await call.answer()
 
@@ -646,65 +651,72 @@ async def show_contact(call: CallbackQuery):
     idx = int(call.data.replace("contact_",""))
     if idx >= len(to_show): await call.answer("Нет такой"); return
     v = to_show[idx]
-    rating = db.get_employer_rating(v.get("contact",""))
-    await call.message.answer(f"📞 *{v['title']}*\n\n{v['contact']}\n\n⭐ {rating}", parse_mode="Markdown", disable_web_page_preview=True)
+    await call.message.answer(f"📞 *{v['title']}*\n\n{v['contact']}", parse_mode="Markdown", disable_web_page_preview=True)
     await call.answer()
 
-async def fav_menu(call: CallbackQuery):
-    await call.message.edit_text("⭐ Выбери вакансию для избранного:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ #1", callback_data="fav_0"), InlineKeyboardButton(text="⭐ #2", callback_data="fav_1"), InlineKeyboardButton(text="⭐ #3", callback_data="fav_2")],
-        [InlineKeyboardButton(text="⬅ Назад к вакансиям", callback_data="show_vacancies")],
-    ]), parse_mode="Markdown")
-
-async def rate_menu(call: CallbackQuery):
-    await call.message.edit_text("👍👎 Оцени работодателя:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👍 #1", callback_data="rateup_0"), InlineKeyboardButton(text="👎 #1", callback_data="ratedown_0")],
-        [InlineKeyboardButton(text="👍 #2", callback_data="rateup_1"), InlineKeyboardButton(text="👎 #2", callback_data="ratedown_1")],
-        [InlineKeyboardButton(text="👍 #3", callback_data="rateup_2"), InlineKeyboardButton(text="👎 #3", callback_data="ratedown_2")],
-        [InlineKeyboardButton(text="⬅ Назад к вакансиям", callback_data="show_vacancies")],
-    ]), parse_mode="Markdown")
+async def report_vacancy(call: CallbackQuery):
+    u = db.get_user(call.from_user.id)
+    to_show = u.get("_last_shown",[])
+    idx = int(call.data.replace("report_",""))
+    if idx >= len(to_show): await call.answer("Нет такой"); return
+    v = to_show[idx]
+    vid = f"{v.get('title','')}_{v.get('city','')}"
+    count = db.report_vacancy(vid, call.from_user.id)
+    if count >= 3:
+        v["hidden"] = True
+        db.save()
+        await call.answer("🚩 Вакансия скрыта после 3 жалоб.")
+    else:
+        await call.answer(f"🚩 Жалоба принята ({count}/3). Спасибо.")
 
 async def rate_employer(call: CallbackQuery):
     u = db.get_user(call.from_user.id)
     to_show = u.get("_last_shown",[])
     if "rateup_" in call.data:
         idx = int(call.data.replace("rateup_",""))
-        rating = 1
+        db.rate_employer(to_show[idx].get("contact",""), 1)
     else:
         idx = int(call.data.replace("ratedown_",""))
-        rating = -1
-    if idx >= len(to_show): await call.answer("Нет такой"); return
-    v = to_show[idx]
-    db.rate_employer(v.get("contact",""), rating)
+        db.rate_employer(to_show[idx].get("contact",""), -1)
     await call.answer("✅ Спасибо за оценку!")
 
 async def add_favorite(call: CallbackQuery):
     u = db.get_user(call.from_user.id)
     to_show = u.get("_last_shown",[])
     idx = int(call.data.replace("fav_",""))
-    if idx >= len(to_show): await call.answer("Нет такой"); return
     if db.add_favorite(call.from_user.id, to_show[idx]):
-        await call.answer("⭐ Добавлено в избранное!")
+        await call.answer("⭐ Добавлено!")
     else:
-        await call.answer("🚫 Избранное заполнено (макс 20)")
+        await call.answer("🚫 Избранное заполнено")
+
+async def fav_menu(call: CallbackQuery):
+    await call.message.edit_text("⭐ Выбери:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⭐ #1", callback_data="fav_0"), InlineKeyboardButton(text="⭐ #2", callback_data="fav_1"), InlineKeyboardButton(text="⭐ #3", callback_data="fav_2")],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="show_vacancies")],
+    ]))
+
+async def rate_menu(call: CallbackQuery):
+    await call.message.edit_text("👍👎 Выбери:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👍 #1", callback_data="rateup_0"), InlineKeyboardButton(text="👎 #1", callback_data="ratedown_0")],
+        [InlineKeyboardButton(text="👍 #2", callback_data="rateup_1"), InlineKeyboardButton(text="👎 #2", callback_data="ratedown_1")],
+        [InlineKeyboardButton(text="👍 #3", callback_data="rateup_2"), InlineKeyboardButton(text="👎 #3", callback_data="ratedown_2")],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="show_vacancies")],
+    ]))
 
 async def show_favorites(call: CallbackQuery):
     favs = db.get_favorites(call.from_user.id)
     if not favs:
-        await call.message.edit_text("⭐ Избранное пусто.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]), parse_mode="Markdown")
+        await call.message.edit_text("⭐ Пусто.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]), parse_mode="Markdown")
         return
-    resp = "⭐ *Избранное:*\n\n"
-    for i, v in enumerate(favs, 1):
-        resp += f"*{i}. {v['title']}*\n💵 {v['payment']} | {v.get('source','?')}\n\n"
-    await call.message.edit_text(resp, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]), parse_mode="Markdown", disable_web_page_preview=True)
+    resp = "⭐ *Избранное:*\n\n" + "\n".join([f"*{i}. {v['title']}*\n💵 {v['payment']}\n" for i,v in enumerate(favs,1)])
+    await call.message.edit_text(resp, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="main")]]), parse_mode="Markdown")
 
 async def referral_info(call: CallbackQuery):
     code = db.generate_referral_code(call.from_user.id)
     link = f"https://t.me/{BOT_USERNAME}?start={code}"
     u = db.get_user(call.from_user.id)
-    resp = f"👥 *Реферальная система*\n\nПриведи друга — получите по *{REFERRAL_BONUS_DAYS} дню Премиума*!\n\nТвоя ссылка:\n`{link}`\n\nПриглашено: *{u.get('referral_count',0)}* чел."
-    await call.message.edit_text(resp, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Поделиться ссылкой", switch_inline_query=link)],
+    await call.message.edit_text(f"👥 *Рефералка*\nПриведи друга — +{REFERRAL_BONUS_DAYS} день Премиума!\n\nСсылка:\n`{link}`\n\nПриглашено: *{u.get('referral_count',0)}*", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Поделиться", switch_inline_query=link)],
         [InlineKeyboardButton(text="⬅ Меню", callback_data="main")]
     ]), parse_mode="Markdown", disable_web_page_preview=True)
 
@@ -721,16 +733,19 @@ async def pre_checkout(pq: PreCheckoutQuery): await pq.answer(ok=True)
 
 async def payment_success(message: Message):
     db.set_paid(message.from_user.id)
-    await message.answer("💎 *Оплата прошла!* Вот твои гайды:", parse_mode="Markdown")
+    await message.answer("💎 *Оплата прошла!*", parse_mode="Markdown")
     await message.answer(SCAM_GUIDE, parse_mode="Markdown")
     await message.answer(SAMOZANYATOST_GUIDE, parse_mode="Markdown")
     await message.answer(TEMPLATES_GUIDE, parse_mode="Markdown")
-    await message.answer("✅ *Готово!* Безлимит активен.", reply_markup=main_menu(True), parse_mode="Markdown")
+    await message.answer("✅ Готово! Безлимит активен.", reply_markup=main_menu(True), parse_mode="Markdown")
 
 async def guides_cmd(message: Message):
     await message.answer(SCAM_GUIDE, parse_mode="Markdown")
     await message.answer(SAMOZANYATOST_GUIDE, parse_mode="Markdown")
     await message.answer(TEMPLATES_GUIDE, parse_mode="Markdown")
+
+async def support_cmd(message: Message):
+    await message.answer(f"📞 Поддержка: {SUPPORT_USERNAME}\nНапиши нам, ответим в течение 24 часов.")
 
 async def change_city(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("📍 Новый город:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Отмена", callback_data="main")]]), parse_mode="Markdown")
@@ -745,15 +760,14 @@ async def main_handler(call: CallbackQuery):
 async def stats_cmd(message: Message):
     if message.from_user.id == ADMIN_ID:
         t, p, v, cities = db.stats()
-        resp = f"👥 Пользователей: {t}\n💎 Платных: {p}\n📋 Вакансий: {v}\n⭐ Звёзд: ~{p*PREMIUM_PRICE}\n\n📍 По городам:\n"
-        for city, count in sorted(cities.items(), key=lambda x: -x[1])[:10]:
-            resp += f"  {city}: {count}\n"
+        resp = f"👥 {t} | 💎 {p} | 📋 {v} | ⭐ ~{p*PREMIUM_PRICE}\n\n📍 Города:\n"
+        resp += "\n".join([f"  {c}: {n}" for c,n in sorted(cities.items(), key=lambda x: -x[1])[:10]])
         await message.answer(resp)
 
 async def reset_cmd(message: Message):
     if message.from_user.id == ADMIN_ID:
         db.reset_user(message.from_user.id)
-        await message.answer("✅ Сброшено: Москва, 16-17, Любая, Премиум.")
+        await message.answer("✅ Сброшено.")
 
 async def main():
     log.info("БОТ ЗАПУСКАЕТСЯ")
@@ -762,6 +776,7 @@ async def main():
     dp.message.register(stats_cmd, Command("stats"))
     dp.message.register(reset_cmd, Command("reset"))
     dp.message.register(guides_cmd, Command("guides"))
+    dp.message.register(support_cmd, Command("support"))
     dp.callback_query.register(set_city, F.data.startswith("setcity_"))
     dp.message.register(process_city, Onboarding.city)
     dp.callback_query.register(set_age, F.data.startswith("setage_"))
@@ -774,6 +789,7 @@ async def main():
     dp.callback_query.register(show_vacancies, F.data == "show_vacancies")
     dp.callback_query.register(show_detail, F.data.startswith("detail_"))
     dp.callback_query.register(show_contact, F.data.startswith("contact_"))
+    dp.callback_query.register(report_vacancy, F.data.startswith("report_"))
     dp.callback_query.register(rate_employer, F.data.startswith("rateup_"))
     dp.callback_query.register(rate_employer, F.data.startswith("ratedown_"))
     dp.callback_query.register(add_favorite, F.data.startswith("fav_"))
@@ -790,8 +806,8 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     seed_vacancies()
     asyncio.create_task(background_parsing())
-    asyncio.create_task(keep_alive())
     asyncio.create_task(daily_notifications(bot))
+    asyncio.create_task(run_web_server())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
