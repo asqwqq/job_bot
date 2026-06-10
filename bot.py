@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 5.2 FINAL
+- Новый токен
 - Парсинг Avito + hh.ru + YouDo + Rabota.ru
 - Прокси подключён
 - Дубликаты исключены
-- Markdown без лишних слэшей
 - Веб-сервер для Render
 - Защита от стоп-слов и спама
 """
@@ -29,7 +29,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
 
 # ========== НАСТРОЙКИ ==========
-BOT_TOKEN = "8883834523:AAGEabtv8AZ84PrlEBYL4gNCo22WYQgcJ0U"
+BOT_TOKEN = "8883834523:AAFLbP2HfLBH1_93DF8RuO68pAEby9wk-ac"
 DEEPSEEK_API_KEY = "sk-5cdac197514c404ab7b10935fb2dc996"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 HH_API_URL = "https://api.hh.ru/vacancies"
@@ -262,7 +262,7 @@ async def parse_avito(city: str) -> List[Dict]:
                 t_e = item.find("h3",{"itemprop":"name"}); p_e = item.find("meta",{"itemprop":"price"}); l_e = item.find("a",{"data-marker":"item-title"})
                 title = t_e.text.strip() if t_e else ""; price = p_e.get("content","") if p_e else ""; link = "https://www.avito.ru"+l_e.get("href","") if l_e else ""
                 if title and link:
-                    vacancies.append({"title":title,"description":f"Вакансия с Avito","payment":f"{price} руб." if price else "Договорная","city":city,"age_groups":["14-15","16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {link}","source":"Avito","date_added":datetime.now().isoformat()})
+                    vacancies.append({"title":title,"description":"Вакансия с Avito","payment":f"{price} руб." if price else "Договорная","city":city,"age_groups":["14-15","16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {link}","source":"Avito","date_added":datetime.now().isoformat()})
             except: continue
     except: pass
     return vacancies
