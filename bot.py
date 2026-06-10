@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 5.1
+БОТ «ГДЕ ПОДРАБОТКА?» — ВЕРСИЯ 5.2 FINAL
 - Парсинг Avito + hh.ru + YouDo + Rabota.ru
 - Прокси подключён
-- Защита от дубликатов и стоп-слов
+- Дубликаты исключены
+- Markdown без лишних слэшей
 - Веб-сервер для Render
-- Кнопка «⚠️ Жалоба»
-- Валидация ввода
-- Экранирование спецсимволов в Markdown
+- Защита от стоп-слов и спама
 """
 import asyncio
 import json
@@ -76,9 +75,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | 
 log = logging.getLogger("job_bot")
 
 def esc_md(text: str) -> str:
-    """Экранирование спецсимволов для Markdown"""
     if not text: return ""
-    for ch in ['*', '_', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+    for ch in ['*', '_', '`', '[']:
         text = text.replace(ch, '\\' + ch)
     return text
 
@@ -214,10 +212,18 @@ class Database:
             results.append(v)
         return results
 
+    def vacancy_exists(self, title: str, city: str, contact: str) -> bool:
+        title_lower = title.strip().lower(); city_lower = city.strip().lower(); contact_lower = contact.strip().lower()
+        for v in self.vacancies:
+            if (v.get("title","").strip().lower() == title_lower and 
+                v.get("city","").strip().lower() == city_lower and
+                v.get("contact","").strip().lower() == contact_lower):
+                return True
+        return False
+
     def add_vacancy(self, vacancy: Dict):
         if has_stop_words(vacancy.get("title","") + " " + vacancy.get("description","")): return
-        for v in self.vacancies:
-            if v.get("title","").strip().lower() == vacancy.get("title","").strip().lower() and v.get("city","").strip().lower() == vacancy.get("city","").strip().lower(): return
+        if self.vacancy_exists(vacancy.get("title",""), vacancy.get("city",""), vacancy.get("contact","")): return
         self.vacancies.append(vacancy); self.save()
 
     def stats(self):
@@ -241,25 +247,6 @@ def classify_job_type(title: str) -> str:
     if any(w in title.lower() for w in ["удалён","онлайн","отзыв","модерат","копирайт","текст","транскриб","дизайн","набор"]): return "online"
     return "active"
 
-def seed_vacancies():
-    if len(db.vacancies) >= 10: return
-    jobs = [
-        {"title":"Раздача листовок у метро Кузнецкий мост","description":"Раздача рекламных листовок. 4 часа. Можно без опыта.","payment":"500 руб./смена","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (495) 123-45-67","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Курьер на велосипеде","description":"Доставка еды. Свободный график.","payment":"3000 руб./день","city":"Москва","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (495) 222-33-44","source":"Яндекс.Еда","date_added":datetime.now().isoformat()},
-        {"title":"Выгул собак в центре","description":"Хамовники. 2 раза в день.","payment":"500 руб./выгул","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"dog","contact":"📞 +7 (916) 444-55-66","source":"Частное лицо","date_added":datetime.now().isoformat()},
-        {"title":"Написание отзывов на маркетплейсах","description":"Удалённо. WB, Ozon. Обучение.","payment":"100 руб./отзыв","city":"Москва","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @otzyvy_bot","source":"Маркетплейсы","date_added":datetime.now().isoformat()},
-        {"title":"Репетитор по математике онлайн","description":"Помощь 5-7 класс. Онлайн.","payment":"500 руб./час","city":"Москва","age_groups":["16-17","18+"],"job_type":"online","category":"tutor","contact":"📞 +7 (916) 123-45-67","source":"Прямой работодатель","date_added":datetime.now().isoformat()},
-        {"title":"Промоутер в ТЦ Галерея","description":"Раздача образцов. 3 часа.","payment":"1200 руб.","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"active","category":"promo","contact":"📞 +7 (812) 111-22-33","source":"Рекламное агентство","date_added":datetime.now().isoformat()},
-        {"title":"Курьер на самокате","description":"Доставка посылок.","payment":"2000 руб./день","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"active","category":"courier","contact":"📞 +7 (812) 444-55-66","source":"Достависта","date_added":datetime.now().isoformat()},
-        {"title":"Онлайн-консультант","description":"Поддержка клиентов. Удалённо.","payment":"15000 руб./мес","city":"Санкт-Петербург","age_groups":["16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 job@spb-shop.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
-        {"title":"Помощь по хозяйству","description":"Уборка территории.","payment":"800 руб.","city":"Павловск","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"cleaning","contact":"📞 +7 (920) 111-22-33","source":"Частное лицо","date_added":datetime.now().isoformat()},
-        {"title":"Выгул собак Павловск","description":"Ул. Советская.","payment":"300 руб./выгул","city":"Павловск","age_groups":["14-15","16-17","18+"],"job_type":"active","category":"dog","contact":"📞 +7 (920) 444-55-66","source":"Частное лицо","date_added":datetime.now().isoformat()},
-        {"title":"Транскрибация аудио","description":"Расшифровка в текст. Удалённо.","payment":"200 руб./час","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📧 transcribe@work.ru","source":"hh.ru","date_added":datetime.now().isoformat()},
-        {"title":"Дизайн аватарок","description":"Аватарки для соцсетей.","payment":"200 руб./шт","city":"Вся Россия","age_groups":["14-15","16-17","18+"],"job_type":"online","category":"freelance","contact":"📱 @design_bot","source":"Фриланс","date_added":datetime.now().isoformat()},
-    ]
-    for j in jobs: db.add_vacancy(j)
-    db.save()
-
 async def parse_avito(city: str) -> List[Dict]:
     vacancies = []
     city_domains = {"москва":"moskva","санкт-петербург":"sankt-peterburg","спб":"sankt-peterburg","казань":"kazan","екатеринбург":"ekaterinburg","новосибирск":"novosibirsk"}
@@ -273,10 +260,9 @@ async def parse_avito(city: str) -> List[Dict]:
         for item in soup.find_all("div", {"data-marker":"item"})[:3]:
             try:
                 t_e = item.find("h3",{"itemprop":"name"}); p_e = item.find("meta",{"itemprop":"price"}); l_e = item.find("a",{"data-marker":"item-title"})
-                title = t_e.text.strip() if t_e else "Без названия"
-                price = p_e.get("content","Не указана") if p_e else "Не указана"
-                link = "https://www.avito.ru"+l_e.get("href","") if l_e else ""
-                vacancies.append({"title":title,"description":f"С Avito: {title}","payment":f"{price} руб." if price!="Не указана" else "Договорная","city":city,"age_groups":["14-15","16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {link}","source":"Avito","date_added":datetime.now().isoformat()})
+                title = t_e.text.strip() if t_e else ""; price = p_e.get("content","") if p_e else ""; link = "https://www.avito.ru"+l_e.get("href","") if l_e else ""
+                if title and link:
+                    vacancies.append({"title":title,"description":f"Вакансия с Avito","payment":f"{price} руб." if price else "Договорная","city":city,"age_groups":["14-15","16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {link}","source":"Avito","date_added":datetime.now().isoformat()})
             except: continue
     except: pass
     return vacancies
@@ -290,12 +276,12 @@ async def parse_hh(city_name: str, city_code: int = 1) -> List[Dict]:
                 data = await r.json()
         for item in data.get("items",[]):
             try:
-                title = item.get("name","Без названия")
+                title = item.get("name",""); url = item.get("alternate_url","")
                 salary = item.get("salary")
-                payment = f"{salary.get('from','?')}-{salary.get('to','?')}{salary.get('currency','руб.')}" if salary else "Не указана"
-                url = item.get("alternate_url","")
+                payment = f"{salary.get('from','?')}-{salary.get('to','?')} {salary.get('currency','руб.')}" if salary else "Не указана"
                 resp_text = re.sub(r'<[^>]+>','',item.get("snippet",{}).get("responsibility","") or "")
-                vacancies.append({"title":title,"description":f"{item.get('employer',{}).get('name','')}. {resp_text[:150]}","payment":payment,"city":city_name,"age_groups":["16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {url}","source":"hh.ru","date_added":datetime.now().isoformat()})
+                if title and url:
+                    vacancies.append({"title":title,"description":f"{item.get('employer',{}).get('name','')}. {resp_text[:150]}","payment":payment,"city":city_name,"age_groups":["16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {url}","source":"hh.ru","date_added":datetime.now().isoformat()})
             except: continue
     except: pass
     return vacancies
@@ -309,7 +295,9 @@ async def parse_rabota(city_name: str) -> List[Dict]:
                 data = await r.json()
         for item in data.get("vacancies",[])[:5]:
             try:
-                vacancies.append({"title":item.get("title",""),"description":item.get("description","")[:200],"payment":item.get("salary","Не указана"),"city":city_name,"age_groups":["16-17","18+"],"job_type":classify_job_type(item.get("title","")),"category":classify_category(item.get("title","")),"contact":f"🔗 {item.get('url','')}","source":"Rabota.ru","date_added":datetime.now().isoformat()})
+                title = item.get("title",""); url = item.get("url","")
+                if title and url:
+                    vacancies.append({"title":title,"description":item.get("description","")[:200],"payment":item.get("salary","Не указана"),"city":city_name,"age_groups":["16-17","18+"],"job_type":classify_job_type(title),"category":classify_category(title),"contact":f"🔗 {url}","source":"Rabota.ru","date_added":datetime.now().isoformat()})
             except: continue
     except: pass
     return vacancies
@@ -325,7 +313,8 @@ async def parse_youdо(city_name: str) -> List[Dict]:
         for task in soup.find_all("div", class_="task")[:3]:
             try:
                 title = task.find("a", class_="task-title"); price = task.find("div", class_="task-price")
-                if title: vacancies.append({"title":title.text.strip(),"description":f"Задание на YouDo: {title.text.strip()}","payment":price.text.strip() if price else "Договорная","city":city_name,"age_groups":["14-15","16-17","18+"],"job_type":classify_job_type(title.text),"category":classify_category(title.text),"contact":f"🔗 {YOUDO_URL}{title.get('href','')}","source":"YouDo","date_added":datetime.now().isoformat()})
+                if title:
+                    vacancies.append({"title":title.text.strip(),"description":"Задание на YouDo","payment":price.text.strip() if price else "Договорная","city":city_name,"age_groups":["14-15","16-17","18+"],"job_type":classify_job_type(title.text),"category":classify_category(title.text),"contact":f"🔗 {YOUDO_URL}{title.get('href','')}","source":"YouDo","date_added":datetime.now().isoformat()})
             except: continue
     except: pass
     return vacancies
@@ -622,7 +611,6 @@ async def main():
     dp.message.register(payment_success, F.successful_payment)
     global bot
     bot = Bot(token=BOT_TOKEN)
-    seed_vacancies()
     asyncio.create_task(background_parsing())
     asyncio.create_task(daily_notifications(bot))
     asyncio.create_task(run_web_server())
